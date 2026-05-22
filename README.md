@@ -1,7 +1,7 @@
 # McCauley — Conversational Feedback Agent (v0.1)
 
-A conversational AI for soliciting structured (Situation-Behavior-Impact) feedback at work and
-serving it to authorized recipients through chat + reports.
+A conversational AI for soliciting structured (Situation-Behavior-Impact) feedback at work
+and serving it to authorized recipients through chat + reports.
 
 See [`spec.md`](spec.md), [`design.md`](design.md), [`v0.1-scope.md`](v0.1-scope.md), and
 [`cloud-choice.md`](cloud-choice.md) for the full design context.
@@ -17,22 +17,78 @@ ops/        Docker Compose and seed CSVs for the demo org
 
 ## Quick start
 
+You need:
+
+- Docker Desktop (or any Docker engine with Compose).
+- An [Anthropic API key](https://console.anthropic.com/).
+- A [Voyage AI key](https://www.voyageai.com/) for embeddings.
+- A GCP service-account JSON with the **Speech-to-Text** and **Text-to-Speech** APIs enabled.
+
+Set up env vars and credentials:
+
 ```bash
-cp .env.example .env       # fill in ANTHROPIC_API_KEY, VOYAGE_API_KEY, GOOGLE_APPLICATION_CREDENTIALS
+cp .env.example .env
+# edit .env:
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   VOYAGE_API_KEY=pa-...
+#   GOOGLE_APPLICATION_CREDENTIALS_HOST=/absolute/path/on/your/host/to/google-credentials.json
+#   SESSION_SECRET=any-random-string
+
 docker compose -f ops/docker-compose.yml up --build
-# in another terminal:
-docker compose -f ops/docker-compose.yml exec backend python -m app.seed
-open http://localhost:5173
 ```
 
-The seed loads ~50 users, ~10 org units, and ~30 pre-existing feedback records — enough to
-exercise the closure-based ACL, run the recipient retrieval, and walk through the demo script
-in [`v0.1-scope.md`](v0.1-scope.md).
+The backend container runs Alembic migrations on startup. Once it's up, seed the demo org:
+
+```bash
+docker compose -f ops/docker-compose.yml exec backend python -m app.seed
+```
+
+Then open <http://localhost:5173>. You'll see the user-picker login.
+
+## Demo script (the 10-step path from v0.1-scope.md)
+
+1. **Sign in as Sam Rivera** (Senior Engineer, Mobile).
+2. **Provider mode (voice):** click *Give feedback*, hold the mic, give feedback about Priya
+   Singh. The bot collects subject, headline, and two SBI examples; the right pane fills in.
+3. **Pivot to text** mid-conversation: "Actually, let's talk about the Mobile team for a
+   moment — they've been shipping consistently." A new draft appears in the stack with
+   Priya's paused.
+4. **Resume Priya's draft** by clicking it; finalize and submit.
+5. **Submit the Mobile-team feedback anonymously** (toggle anonymity if you like).
+6. **Sign out, sign in as Maya Patel** (Director of Engineering).
+7. **Recipient mode:** click *My feedback*. Ask *"What feedback has come in about my reports
+   this month?"* The sources panel shows the records the closure surfaces.
+8. **Probe the ACL:** try asking about a sibling org Maya doesn't oversee. The bot reports
+   zero results.
+9. **Generate a report** with the button.
+10. **Sign in as Priya** to confirm she sees feedback about herself but not her peers.
 
 ## Required env vars
 
 - `ANTHROPIC_API_KEY` — Claude API (Sonnet 4.6 + Haiku 4.5).
 - `VOYAGE_API_KEY` — `voyage-3-large` for feedback embeddings.
-- `GOOGLE_APPLICATION_CREDENTIALS` — path to a GCP service-account JSON with STT + TTS scopes.
-- `POSTGRES_URL` — defaults to the docker-compose Postgres instance.
+- `GOOGLE_APPLICATION_CREDENTIALS_HOST` — absolute path on your host to a GCP service-account
+  JSON. The compose file mounts it into the backend container at
+  `/run/secrets/google-credentials.json`.
 - `SESSION_SECRET` — random string for signing the local-auth session cookie.
+- `POSTGRES_URL` — already wired by compose; override only if you point at an external DB.
+
+## Tests
+
+```bash
+cd backend
+pip install -e ".[dev]"
+pytest                       # unit tests (closure, draft stack, skills, health)
+pytest tests/test_acl_view.py  # integration test — needs Docker (testcontainers spins up Postgres)
+```
+
+The two load-bearing checks called out in v0.1-scope.md:
+
+- `tests/test_closure.py` — pure-Python unit tests of the org-graph closure computation.
+- `tests/test_acl_view.py` — integration test of `feedback_visible_to_me` against real Postgres.
+
+## What's *not* here
+
+See [`v0.1-scope.md`](v0.1-scope.md) **What's out** for the explicit deferral list — most of
+v1's enterprise plumbing (OIDC, SCIM, multi-region, observability stack, taxonomy lifecycle,
+provider-injection screening) is intentionally absent.
