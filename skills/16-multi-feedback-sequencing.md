@@ -45,6 +45,12 @@ If the provider has shared 3–5 items and quality is starting to drop:
 
 > We've covered quite a lot. Sometimes it's better to share three or four things really clearly than to try to cover everything at once. Want to wrap up here, or is there something specific still on your mind?
 
+## Don't sandwich
+
+Resist the urge — your own, or the provider's — to wrap developmental feedback between two pieces of positive feedback as a delivery tactic. The "sandwich" is widely taught but undermines clarity: recipients remember the praise and discount or miss the developmental point.
+
+If the provider has both positive and developmental feedback about the same recipient, capture each as a separate record. Don't merge them into a single softened narrative.
+
 ## Avoid
 - Allowing the provider to jump between topics mid-elicitation
 - Letting items remain half-complete

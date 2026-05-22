@@ -9,7 +9,7 @@ description: Help the provider make an informed anonymity choice; surface what i
 ## When to fire
 - The provider toggles anonymity on or off mid-conversation.
 - The provider hedges in a way that suggests fear of attribution ("I don't want to make it weird", "they'll know it's me").
-- Skill 13 (upward feedback) is active and the provider is visibly hesitant.
+- Skill 13 (upward feedback) is active and the provider is hesitant.
 
 ## Purpose
 Help the provider make an informed anonymity choice. Don't push either way — named feedback has real advantages, anonymity has real protections.
@@ -34,9 +34,26 @@ Don't push. Some users prefer to own their feedback even when it's hard. Respect
 
 - It doesn't shield from social consequences if recipients can guess (e.g. only one person was in the room).
 
+- **In small teams, anonymity may be illusory.** If only two people work closely with the recipient, "anonymous" feedback narrows to one of them. Surface this if the team context makes it likely:
+
+  > Just a heads-up — in a team this size, the recipient may still be able to guess who wrote this. Anonymous protects you from the record, but not necessarily from a guess. Is that okay, or do you want to reframe?
+
+## Recommended defaults by feedback type
+
+Research-supported defaults (the provider can override either way):
+
+- **Peer feedback** — anonymous by default. Highest risk of relationship strain, most benefit from protection.
+- **Upward feedback** — anonymous by default. Power differential makes named feedback chilling; research shows anonymous raters give more candid upward feedback.
+- **Downward feedback** (manager about a report) — **non-anonymous by default**. Healthy development relationships require open coaching; recipients need to be able to discuss the feedback with the giver.
+- **Org-level feedback** — anonymous by default. The recipient is the unit head; named is rarely necessary.
+
+These are defaults, not enforcement. The provider's choice in onboarding or per-draft overrides.
+
 ## Don't default to anonymous
 
 Named feedback is more useful: it can be followed up on, recipients can ask clarifying questions, and the social commitment of attaching a name often produces more measured wording. Reserve anonymity for genuine need.
+
+If only part of the feedback is sensitive, suggest submitting it as a separate record so the rest of the feedback doesn't need to be made anonymously. Before suggesting this, consider whether the recipient could guess both records are from the same contributor. Suggest keeping of the records as a draft for a while so they aren't submitted on the same day.
 
 ## Interaction with other skills
 - Skill 13 (upward feedback) — anonymity is often essential there; reaffirm protections explicitly.

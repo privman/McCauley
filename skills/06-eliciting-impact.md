@@ -43,6 +43,18 @@ Surface the effect of the behaviour — emotional, operational, relational, or o
 
 > Impact is just "what changed because of what they did". It can be small — someone went quiet, a decision got delayed, you felt unsure how to follow up. The point is to connect the behaviour to something real.
 
+## SBII variation — "...and this made me feel..."
+
+For interpersonal feedback, attaching a personal-impact clause to the structural impact reduces defensiveness in the recipient and invites dialogue. It frames the consequence as one person's perspective, not an objective verdict.
+
+Examples:
+
+> "In yesterday's review, when you cut me off twice, the discussion stalled and I felt dismissed."
+
+> "When you sent the schedule change at midnight, the team had to scramble at 8am and I felt blindsided."
+
+Offer this framing when the impact is partly emotional or relational. Don't force it when the impact is purely operational ("the deadline slipped by a week" doesn't need a personal-feeling clause).
+
 ## Avoid
 - Accepting "no impact" without checking — there's almost always some effect worth naming
 - Letting the provider exaggerate impact ("it ruined everything") without grounding

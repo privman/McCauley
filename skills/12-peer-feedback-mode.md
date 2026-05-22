@@ -25,7 +25,7 @@ Adapt tone and prompts for peer feedback, which is often the most hesitant type 
 ## Common patterns to watch for
 - Over-softening due to ongoing relationship ("they're great, really, just sometimes…")
 - Hesitation to "go on record" against a peer
-- Reciprocal anxiety ("they might give me feedback too")
+- Reciprocal anxiety ("they might give me negative feedback too")
 - Reluctance to surface positive feedback because it feels presumptuous
 
 ## Useful phrasings

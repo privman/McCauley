@@ -40,6 +40,18 @@ Probe: *"Do you have a sense of what might have been going on for them at the ti
 Is the feedback entirely about impact on the provider, with no consideration of broader context?
 Probe: *"Did you notice how others experienced this — was it consistent with your reading?"*
 
+**Affinity bias** (positive feedback variant of one-sided framing)
+Is the provider giving consistently glowing feedback about someone who shares their background, communication style, or working preferences? Affinity often inflates positive evaluations.
+Probe: *"What's something they could improve on, even small? Anyone has growth areas."*
+
+**Intent inquiry** (an empathy prompt, not a bias category)
+For developmental feedback, offering an intent-inquiry probe softens the verdict and produces more defensible feedback:
+Probe: *"Do you have a sense of what they might have been trying to achieve in that moment?"*
+This is not about excusing the behaviour — it builds nuance in the captured record.
+
+**Language flagged for demographic bias** (system-level, not a probe)
+Words like "aggressive", "abrasive", "shrill", "emotional", "bossy" are statistically applied unevenly across demographic groups for identical behaviour. If the feedback uses these and the recipient belongs to a group these are disproportionately applied to, return to skill 05 to extract the observable behaviour and let the captured record stand on what was actually done. Don't accuse the provider of bias; just probe for specifics.
+
 ### Rules for the bias check
 - Pick the **strongest signal only** — don't stack multiple probes
 - One probe, then move on regardless of the response

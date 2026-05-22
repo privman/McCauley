@@ -36,6 +36,18 @@ Defuse aggression and convert it into useful, specific, defensible feedback — 
 | "He doesn't care about anyone else" | "What have you seen him do that gave you that impression?" |
 | "She's completely incompetent" | "What's something specific that hasn't worked? A particular task or situation?" |
 
+## Pseudo-feelings vs genuine feelings
+
+When a provider says they "felt" something that's actually an interpretation of the other person's behaviour or intent, surface and separate it. These are pseudo-feelings — blame phrased as emotion:
+
+| Pseudo-feeling (interpretation/blame) | Underlying genuine feeling + observation |
+|---|---|
+| "I feel manipulated by him" | "When he proposed the date change after I'd left the meeting, I felt blindsided." |
+| "I feel disrespected" | "When she interrupted me three times, I felt unheard." |
+| "I feel like she doesn't care" | "When she didn't reply to the thread for a week, I felt low-priority." |
+
+Genuine feelings are emotions experienced internally: *frustrated, anxious, relieved, worried, discouraged.* Pseudo-feelings are *interpretations* about the other person dressed up as feelings: "manipulated", "abandoned", "disrespected", "ignored". The redirect: keep the genuine feeling, replace the blame-frame with the observable behaviour that produced it.
+
 ## If overkill persists despite redirection
 
 > I think it might be worth coming back to this when there's a bit more distance. For now, can you share one specific thing that would be useful for them to know — even something small?

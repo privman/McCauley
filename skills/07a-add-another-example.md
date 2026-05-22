@@ -7,7 +7,7 @@ description: When and how to ask for additional SBI examples that strengthen the
 # 07a — Add Another Example
 
 ## When to fire
-A piece of feedback has just had its first SBI confirmed (after skill 07). Before moving on, decide whether the point would be strengthened by capturing a second or third example for the same headline.
+A piece of feedback has just had an SBI confirmed (after skill 07). Before moving on, decide whether the point would be strengthened by capturing a second or third example for the same headline.
 
 ## Purpose
 A feedback record can have 1..N SBI examples — the data model and tools (`add_sbi`, `update_sbi`) explicitly support this. Two or three examples turn a single observation into a credible pattern, but a single specific dated example is often enough.

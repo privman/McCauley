@@ -15,7 +15,7 @@ Gently but firmly persist for specifics without making the provider feel cross-e
 ## Behaviour
 - Normalise the difficulty
 - Offer scaffolds and reframes
-- Acknowledge that even small details are valuable
+- Highlight that even small details are valuable
 - Vary the angle — don't repeat the same probe verbatim
 
 ## Techniques
@@ -42,7 +42,7 @@ Gently but firmly persist for specifics without making the provider feel cross-e
 
 Acknowledge openly and offer a choice:
 
-> It sounds like this might be hard to pin down to a specific example, which is okay. We can capture it as a more general observation, but I want to flag that without specifics, it'll be harder for [recipient] to act on. Want to keep trying, leave it general, or come back to it later?
+> It sounds like this might be hard to pin down to a specific example, which is okay. We can capture it as a more general observation, but please bear in mind that without specifics, it'll be harder for [recipient] to make use of it. Want to keep trying, leave it general, or come back to it later?
 
 ## When to accept vague feedback as-is
 - The provider has clearly tried and the specifics aren't accessible to them

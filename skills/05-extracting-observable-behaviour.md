@@ -46,3 +46,5 @@ Convert interpretations like "dismissive", "aggressive", "unengaged", "rude" int
 - Letting the provider stay at the level of character attribution
 - Sounding interrogating — frame each probe as curiosity, not challenge
 - Asking multiple probes in one turn
+- **Leading questions.** "Would you say they were dismissive?" leads the provider to confirm a frame; "What did you observe?" doesn't. Always ask the open form.
+- **Attributing intent.** "She did it on purpose" or "He didn't mean it" is interpretation about motive — outside the scope of observable behaviour. If the provider attributes intent, separate the action from the motive: capture what happened; bracket the inference. (Intent can be a useful prompt for empathy in skill 17, but it isn't part of the captured behaviour.)

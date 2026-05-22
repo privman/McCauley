@@ -7,21 +7,22 @@ description: Reaffirm anonymity, normalise the difficulty, accept partial feedba
 # 13 — Upward Feedback Mode
 
 ## When to fire
-Provider is giving feedback about their manager — direct or indirect reporting line.
+Provider is giving feedback about their manager (direct or indirect reporting line) or someone significantly senior to their position.
 
 ## Purpose
 Adapt for the highest-stakes feedback type, where fear of retaliation is real and self-censoring is common even with anonymity.
 
 ## Adaptations to base skills
-- Reaffirm anonymity protections upfront and clearly
+- Reaffirm anonymity protections upfront and clearly if it is enabled
 - Normalise the difficulty of upward feedback
 - Use hypothetical framings if direct description feels too exposed
 - Emphasise team-level impact, not just personal grievance
 - Be willing to accept partial feedback — even a small upward signal is valuable
+- For a recipients who is the head of an organizational unit, suggest submitting the feedback as organizational feedback if appropriate, rather than personal feedback
 
 ## Opening prompt
 
-> Giving feedback to a manager can feel harder than other kinds — that's completely normal. Just to confirm, this feedback [is anonymous / your name will be attached, per the settings you chose]. What's something that would be valuable for [manager] to know — about how they're working with the team?
+> Giving feedback to a manager can feel harder than other kinds — that's completely normal. Just to confirm, [this feedback is anonymous / your name will be attached], per the settings you chose. What's something that would be valuable for [manager] to know — about how they're working with the team?
 
 ## If the provider is visibly hesitant
 

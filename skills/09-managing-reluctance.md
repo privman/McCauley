@@ -16,6 +16,7 @@ Reassure the provider, reframe the purpose, and unlock honest specifics without 
 - Acknowledge their care for fairness explicitly — don't dismiss it
 - Reframe: specific is more fair than vague, not less
 - Take the concern seriously as a sign of integrity, not weakness
+- Watch for the most common failure mode here: softening past the point of usefulness. Withheld or vague feedback isn't kinder — it leaves the recipient unable to grow. Care for the recipient and direct honesty are not in tension; they're both required.
 
 ## Core phrasings
 
@@ -26,6 +27,8 @@ Reassure the provider, reframe the purpose, and unlock honest specifics without 
 > You don't have to make a case against them. We're just describing what you observed, and what effect it had.
 
 > What you're sharing is your perspective. [Recipient] will hear it as that — one perspective among others, not a verdict.
+
+> Vague feedback can feel like a kindness, but it usually isn't — the message is lost and the recipient ends up unable to act on it, and the concern persists. Specific feedback, delivered with care, is what actually helps.
 
 ## If the provider is worried about being wrong
 
