@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,12 +10,14 @@ from app.api import recipient as recipient_api
 from app.api import voice as voice_api
 from app.skills import load_skills
 
-app = FastAPI(title="McCauley v0.1")
 
-
-@app.on_event("startup")
-async def _load_skills() -> None:
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     load_skills()
+    yield
+
+
+app = FastAPI(title="McCauley v0.1", lifespan=lifespan)
 
 
 app.add_middleware(

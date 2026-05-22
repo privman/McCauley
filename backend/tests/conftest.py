@@ -9,6 +9,7 @@ in environments without Docker).
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
 
@@ -37,13 +38,19 @@ async def postgres_url() -> AsyncIterator[str]:
             "postgresql://", "postgresql+asyncpg://"
         )
         os.environ["POSTGRES_URL"] = async_url
-        # Run migrations.
+
+        # Run Alembic in a worker thread — its env.py calls asyncio.run(),
+        # which conflicts with pytest-asyncio's already-running event loop
+        # in this fixture.
         from alembic import command
         from alembic.config import Config
 
-        cfg = Config("alembic.ini")
-        cfg.set_main_option("sqlalchemy.url", async_url)
-        command.upgrade(cfg, "head")
+        def _migrate() -> None:
+            cfg = Config("alembic.ini")
+            cfg.set_main_option("sqlalchemy.url", async_url)
+            command.upgrade(cfg, "head")
+
+        await asyncio.to_thread(_migrate)
         yield async_url
     finally:
         container.stop()
