@@ -14,7 +14,7 @@ Decide which sub-skill (04–11) to engage next, based on what the provider has 
 
 ## Evaluation logic
 
-Read the provider's most recent message and check for the following signals, in priority order:
+Read the provider's most recent messages and check for the following signals, in priority order:
 
 ### Priority 1 — State-based signals (handle first)
 
@@ -56,6 +56,6 @@ e.g. "He sent the email at midnight on a Friday."
 If multiple signals are present, follow the priority order above. State-based signals always trump content gaps — never push for content while the provider is dysregulated, hostile, or genuinely reluctant.
 
 ## Notes
-- Vagueness on a single turn is normal; only treat it as a "managing vagueness" trigger if it persists across multiple probes.
+- Vagueness on a single turn is normal; only trigger skill 08 if it persists across multiple probes.
 - Evaluation is silent. Move directly to the appropriate skill without narrating the decision.
-- Feedback-type-context skills (12–15) run in parallel and modulate the tone of whichever sub-skill is selected.
+- Feedback-type-mode skills (12–15) run in parallel and modulate the tone of whichever sub-skill is selected.

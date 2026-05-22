@@ -27,6 +27,20 @@ Introduce the three-part structure (situation, behaviour, impact) conversational
 
 > I'll help you pull this together as we go — generally what works best is a specific moment, what they did, and what effect it had. Don't worry about getting it right first time; we can build it up together.
 
+## Works equally for positive feedback
+
+SBI is not just for developmental feedback. "She's great at presenting" is as un-actionable as "He's bad at presenting." Both need the same anchoring. See skill 02a.
+
+## When the situation is complex
+
+If the provider is narrating a multi-participant event or an outcome that unfolded over time, scaffold the story with STAR (Situation → Task → Action → Result) and then extract SBI from it:
+
+- *Situation/Task* → SBI *Situation* (plus useful context for the stakes)
+- *Action* → SBI *Behaviour*
+- *Result* → SBI *Impact*
+
+This is an internal scaffold for the agent; don't name STAR to the provider.
+
 ## Avoid
 - Listing all three components abstractly without an example
 - Making the provider feel they need to memorise the structure (the agent will guide them)

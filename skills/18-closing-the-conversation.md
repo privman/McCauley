@@ -24,7 +24,7 @@ Wrap up cleanly, set expectations for what happens next, leave the provider feel
 > Is there anything else you'd like to add before we wrap up?
 
 **Confirm what happens next**
-> Just to confirm: this feedback will go to [recipient][, along with their manager / and the head of that unit]. Your name [will / will not] be attached. They'll see it [timing — immediately / at the next review / as part of a quarterly summary].
+> Just to confirm: this feedback will be visible to [[recipient] / the head of the [recipient] team] and their management chain. Your name [will / will not] be attached. They'll see it [timing — immediately / at the next review / as part of a quarterly summary].
 
 **Express appreciation**
 > Thank you for taking the time to do this carefully. It's the kind of specific, observable feedback that [recipient] can actually use.

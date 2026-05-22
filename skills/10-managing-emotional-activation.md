@@ -48,7 +48,7 @@ When the provider seems steadier:
 ## Avoid
 - Pushing for specifics while the provider is upset
 - Amplifying with phrases like "that must have been awful" — this can escalate
-- Minimising with "let's just stick to the facts" — this can feel dismissive
+- Minimising (e.g., "let's just stick to the facts") when the provider is dysregulated — this can feel dismissive
 - Diagnosing or analysing the provider
 - Trying to be therapeutic — the agent's role is to slow down and respect, not treat
 

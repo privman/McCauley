@@ -36,6 +36,6 @@ Bring the conversation down from abstraction to a concrete moment that the recip
 > Okay — so we're focusing on [meeting/event/moment]. Tell me what happened.
 
 ## Avoid
-- Accepting "always" or "every time" as a substitute for a specific instance
+- Accepting "always" or "every time" as a substitute for a specific instance. Acknowledge that the behavior might be prevalent, but ask for concrete examples to make the feedback effective (see skill 02).
 - Stacking multiple probes in one turn (one question at a time)
 - Moving on without an anchor — the rest of the SBI depends on it
