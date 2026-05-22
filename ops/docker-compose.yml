@@ -1,0 +1,50 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mccauley
+      POSTGRES_PASSWORD: mccauley
+      POSTGRES_DB: mccauley
+    ports:
+      - "5432:5432"
+    volumes:
+      - mccauley-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mccauley -d mccauley"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  backend:
+    build:
+      context: ../backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://mccauley:mccauley@db:5432/mccauley
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/google-credentials.json}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-secret}
+      SKILLS_DIR: /app/skills
+      SEED_DIR: /app/seed
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../skills:/app/skills:ro
+      - ../ops/seed:/app/seed:ro
+      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST:-/dev/null}:/run/secrets/google-credentials.json:ro
+
+  frontend:
+    build:
+      context: ../frontend
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+
+volumes:
+  mccauley-db:
