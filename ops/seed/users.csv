@@ -1,0 +1,21 @@
+id,name,email,title,manager_id
+u_maya,Maya Patel,maya.patel@demo.test,Director of Engineering,
+u_priya,Priya Singh,priya.singh@demo.test,Mobile Engineering Manager,u_maya
+u_omar,Omar Hassan,omar.hassan@demo.test,Platform Engineering Manager,u_maya
+u_lina,Lina Wong,lina.wong@demo.test,Data Engineering Manager,u_maya
+u_sam,Sam Rivera,sam.rivera@demo.test,Senior Engineer (Mobile),u_priya
+u_alex_c,Alex Chen,alex.chen@demo.test,Engineer (Mobile),u_priya
+u_alex_g,Alex Cheng,alex.cheng@demo.test,Engineer (Platform),u_omar
+u_jenna,Jenna Park,jenna.park@demo.test,Engineer (Mobile),u_priya
+u_diego,Diego Alvarez,diego.alvarez@demo.test,Engineer (Mobile),u_priya
+u_kai,Kai Thompson,kai.thompson@demo.test,Engineer (Platform),u_omar
+u_rosa,Rosa Mendoza,rosa.mendoza@demo.test,Engineer (Platform),u_omar
+u_yu,Yu Tanaka,yu.tanaka@demo.test,Senior Engineer (Data),u_lina
+u_ben,Ben Carter,ben.carter@demo.test,Engineer (Data),u_lina
+u_nia,Nia Okafor,nia.okafor@demo.test,Engineer (Data),u_lina
+u_marcus,Marcus Lee,marcus.lee@demo.test,Engineer (Platform),u_omar
+u_zara,Zara Khan,zara.khan@demo.test,Engineer (Mobile),u_priya
+u_ravi,Ravi Iyer,ravi.iyer@demo.test,Engineer (Data),u_lina
+u_emma,Emma Schmidt,emma.schmidt@demo.test,Engineer (Mobile),u_priya
+u_tomas,Tomas Novak,tomas.novak@demo.test,Engineer (Platform),u_omar
+u_hana,Hana Suzuki,hana.suzuki@demo.test,Engineer (Mobile),u_priya
