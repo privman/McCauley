@@ -21,6 +21,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,30 @@ logger = logging.getLogger(__name__)
 SAMPLE_RATE = 16000
 STT_LOCATION = "global"
 STT_MODEL = "chirp_2"
+
+
+# Tagged-union result for transcribe(). Lets the WS handler distinguish
+# the three outcomes — useful text, user-was-silent, and our-side-failed
+# — and react with appropriate UX (the user-facing message for an STT
+# outage shouldn't be the same as the response to a silent buffer).
+@dataclass(frozen=True)
+class TranscriptText:
+    text: str
+
+
+@dataclass(frozen=True)
+class TranscriptSilence:
+    """No speech detected in the audio (silence, noise, empty buffer)."""
+
+
+@dataclass(frozen=True)
+class TranscriptError:
+    """STT call failed. `reason` is a human-readable summary for logs."""
+
+    reason: str
+
+
+TranscriptionResult = TranscriptText | TranscriptSilence | TranscriptError
 
 
 @lru_cache(maxsize=1)
@@ -50,14 +75,21 @@ def _gcp_project_id() -> str:
     )
 
 
-async def transcribe(audio_bytes: bytes) -> str:
+async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
     """Run a one-shot Google STT v2 recognition over a complete utterance.
 
     Push-to-talk only needs the final transcript, so we wait until the
     user releases the mic and send the whole utterance — no streaming.
+
+    Returns a TranscriptionResult union so the caller can distinguish:
+      - TranscriptText:    we got text back
+      - TranscriptSilence: empty buffer or STT returned no results
+      - TranscriptError:   the STT call itself failed (network, auth,
+                           config, quota) — caller should surface a
+                           user-facing message, not silently drop the turn
     """
     if not audio_bytes:
-        return ""
+        return TranscriptSilence()
     from google.cloud.speech_v2 import SpeechClient, types  # type: ignore[attr-defined]
 
     project = _gcp_project_id()
@@ -89,7 +121,15 @@ async def transcribe(audio_bytes: bytes) -> str:
             r.alternatives[0].transcript for r in resp.results if r.alternatives
         )
 
-    return await asyncio.to_thread(_sync_recognize)
+    try:
+        text = await asyncio.to_thread(_sync_recognize)
+    except Exception as e:
+        logger.exception("STT failed")
+        return TranscriptError(reason=str(e))
+
+    if not text.strip():
+        return TranscriptSilence()
+    return TranscriptText(text=text)
 
 
 async def synthesize(text: str) -> AsyncIterator[bytes]:

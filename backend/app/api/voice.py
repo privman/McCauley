@@ -26,7 +26,13 @@ from app.auth import COOKIE_NAME, _user_id_from_cookie
 from app.db import sessionmaker
 from app.models import Conversation, User
 from app.provider.orchestrator import get_or_create
-from app.voice import synthesize, transcribe
+from app.voice import (
+    TranscriptError,
+    TranscriptSilence,
+    TranscriptText,
+    synthesize,
+    transcribe,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,16 +95,37 @@ async def voice_ws(
 
             audio = bytes(pcm_buffer)
             pcm_buffer.clear()
-            try:
-                transcript = await transcribe(audio)
-            except Exception:
-                logger.exception("STT failed")
-                await ws.send_json({"type": "error", "message": "transcription failed"})
+            transcript_result = await transcribe(audio)
+
+            if isinstance(transcript_result, TranscriptError):
+                # STT itself failed — speak a user-facing apology so the
+                # user knows to try again. The orchestrator never runs.
+                error_msg = (
+                    "I'm having trouble hearing you right now — "
+                    "mind trying again in a moment?"
+                )
+                await ws.send_json(
+                    {"type": "transcript", "text": "", "error": "stt_failed"}
+                )
+                await ws.send_json({"type": "assistant_text", "text": error_msg})
+                try:
+                    async for chunk in synthesize(error_msg):
+                        await ws.send_bytes(chunk)
+                except Exception:
+                    logger.exception("TTS failed during STT-error apology")
+                await ws.send_json({"type": "audio_end"})
                 continue
 
-            await ws.send_json({"type": "transcript", "text": transcript})
-            if not transcript:
+            if isinstance(transcript_result, TranscriptSilence):
+                # Silent / empty buffer — just echo an empty transcript and
+                # wait for the next push-to-talk. No bot turn, no TTS.
+                await ws.send_json({"type": "transcript", "text": ""})
                 continue
+
+            # TranscriptText: happy path.
+            assert isinstance(transcript_result, TranscriptText)
+            transcript = transcript_result.text
+            await ws.send_json({"type": "transcript", "text": transcript})
 
             async with sessionmaker()() as session:
                 async with session.begin():
