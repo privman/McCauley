@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "../api";
+import { useAutoScroll } from "../components/useAutoScroll";
 
 type Msg = { role: "you" | "bot"; text: string };
 type Source = {
@@ -27,6 +28,12 @@ export default function MyFeedback() {
   const [draft, setDraft] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const thinkingTimerRef = useRef<number | null>(null);
+  const { ref: scrollRef, stickToBottom } = useAutoScroll<HTMLDivElement>([
+    messages,
+    partial,
+    pending,
+    showThinking,
+  ]);
 
   function armThinkingTimer() {
     if (thinkingTimerRef.current !== null) {
@@ -88,6 +95,7 @@ export default function MyFeedback() {
     setSources([]);
     setPartial("");
     setPending(true);
+    stickToBottom();
     armThinkingTimer();
     wsRef.current.send(JSON.stringify({ type: "user_text", text }));
   }
@@ -95,7 +103,7 @@ export default function MyFeedback() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-0">
       <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <div className="text-slate-400 text-sm">
               Ask about feedback you have access to. I'll cite the source records.
