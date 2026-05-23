@@ -5,9 +5,13 @@ import { VoiceSession } from "../voice";
 
 type Msg = { role: "you" | "bot"; text: string };
 
+const THINKING_DELAY_MS = 750;
+
 export default function GiveFeedback() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
+  const [pending, setPending] = useState(false);
+  const [showThinking, setShowThinking] = useState(false);
   const [stack, setStack] = useState<Stack | null>(null);
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
@@ -16,6 +20,25 @@ export default function GiveFeedback() {
   const voiceRef = useRef<VoiceSession | null>(null);
   const convoIdRef = useRef<string | null>(null);
   const voicePressStartRef = useRef<number | null>(null);
+  const thinkingTimerRef = useRef<number | null>(null);
+
+  function armThinkingTimer() {
+    if (thinkingTimerRef.current !== null) {
+      window.clearTimeout(thinkingTimerRef.current);
+    }
+    setShowThinking(false);
+    thinkingTimerRef.current = window.setTimeout(() => {
+      setShowThinking(true);
+    }, THINKING_DELAY_MS);
+  }
+
+  function clearThinkingTimer() {
+    if (thinkingTimerRef.current !== null) {
+      window.clearTimeout(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
+    setShowThinking(false);
+  }
 
   useEffect(() => {
     // Text WS for typed turns.
@@ -23,7 +46,12 @@ export default function GiveFeedback() {
     ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
     ws.onclose = () => (textWsRef.current = null);
     textWsRef.current = ws;
-    return () => ws.close();
+    return () => {
+      if (thinkingTimerRef.current !== null) {
+        window.clearTimeout(thinkingTimerRef.current);
+      }
+      ws.close();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -34,9 +62,12 @@ export default function GiveFeedback() {
         break;
       case "assistant_text_delta":
         setPartial((p) => p + (msg.text as string));
+        armThinkingTimer();
         break;
       case "assistant_text":
+        clearThinkingTimer();
         setPartial("");
+        setPending(false);
         setMessages((m) => [...m, { role: "bot", text: msg.text as string }]);
         break;
       case "draft_state":
@@ -49,7 +80,9 @@ export default function GiveFeedback() {
         ]);
         break;
       case "error":
+        clearThinkingTimer();
         setPartial("");
+        setPending(false);
         setMessages((m) => [
           ...m,
           { role: "bot", text: `(error) ${msg.message}` },
@@ -63,6 +96,8 @@ export default function GiveFeedback() {
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setPartial("");
+    setPending(true);
+    armThinkingTimer();
     textWsRef.current?.send(JSON.stringify({ type: "user_text", text }));
   }
 
@@ -154,6 +189,14 @@ export default function GiveFeedback() {
           {partial && (
             <div className="max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap bg-slate-100 text-slate-800">
               {partial}
+            </div>
+          )}
+          {pending && showThinking && (
+            <div
+              className="text-slate-500 text-xs italic"
+              style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+            >
+              thinking…
             </div>
           )}
         </div>

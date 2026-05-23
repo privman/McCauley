@@ -16,12 +16,35 @@ const EXAMPLE_PROMPTS = [
   "What are the top themes in feedback about delivery?",
 ];
 
+const THINKING_DELAY_MS = 750;
+
 export default function MyFeedback() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
+  const [pending, setPending] = useState(false);
+  const [showThinking, setShowThinking] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [draft, setDraft] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
+  const thinkingTimerRef = useRef<number | null>(null);
+
+  function armThinkingTimer() {
+    if (thinkingTimerRef.current !== null) {
+      window.clearTimeout(thinkingTimerRef.current);
+    }
+    setShowThinking(false);
+    thinkingTimerRef.current = window.setTimeout(() => {
+      setShowThinking(true);
+    }, THINKING_DELAY_MS);
+  }
+
+  function clearThinkingTimer() {
+    if (thinkingTimerRef.current !== null) {
+      window.clearTimeout(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
+    setShowThinking(false);
+  }
 
   useEffect(() => {
     const ws = new WebSocket(wsUrl("/ws/recipient"));
@@ -30,22 +53,32 @@ export default function MyFeedback() {
       switch (msg.type) {
         case "assistant_text_delta":
           setPartial((p) => p + msg.text);
+          armThinkingTimer();
           break;
         case "assistant_text":
+          clearThinkingTimer();
           setPartial("");
+          setPending(false);
           setMessages((m) => [...m, { role: "bot", text: msg.text }]);
           break;
         case "sources":
           setSources(msg.items);
           break;
         case "error":
+          clearThinkingTimer();
           setPartial("");
+          setPending(false);
           setMessages((m) => [...m, { role: "bot", text: `(error) ${msg.message}` }]);
           break;
       }
     };
     wsRef.current = ws;
-    return () => ws.close();
+    return () => {
+      if (thinkingTimerRef.current !== null) {
+        window.clearTimeout(thinkingTimerRef.current);
+      }
+      ws.close();
+    };
   }, []);
 
   function send(text: string) {
@@ -54,6 +87,8 @@ export default function MyFeedback() {
     setDraft("");
     setSources([]);
     setPartial("");
+    setPending(true);
+    armThinkingTimer();
     wsRef.current.send(JSON.stringify({ type: "user_text", text }));
   }
 
@@ -81,6 +116,14 @@ export default function MyFeedback() {
           {partial && (
             <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap bg-slate-100 text-slate-800">
               {partial}
+            </div>
+          )}
+          {pending && showThinking && (
+            <div
+              className="text-slate-500 text-xs italic"
+              style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+            >
+              thinking…
             </div>
           )}
         </div>
