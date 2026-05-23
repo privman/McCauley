@@ -27,7 +27,8 @@ from functools import lru_cache
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
-STT_LOCATION = "global"
+# chirp_2 isn't available on the global endpoint — pick any supported region.
+STT_LOCATION = "europe-west4"
 STT_MODEL = "chirp_2"
 
 
@@ -90,13 +91,20 @@ async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
     """
     if not audio_bytes:
         return TranscriptSilence()
+    from google.api_core.client_options import ClientOptions
     from google.cloud.speech_v2 import SpeechClient, types  # type: ignore[attr-defined]
 
     project = _gcp_project_id()
     recognizer = f"projects/{project}/locations/{STT_LOCATION}/recognizers/_"
 
     def _sync_recognize() -> str:
-        client = SpeechClient()
+        # Regional recognizers require a regional endpoint; the default
+        # speech.googleapis.com routes only to `global`.
+        client = SpeechClient(
+            client_options=ClientOptions(
+                api_endpoint=f"{STT_LOCATION}-speech.googleapis.com"
+            )
+        )
         config = types.RecognitionConfig(
             explicit_decoding_config=types.ExplicitDecodingConfig(
                 encoding=types.ExplicitDecodingConfig.AudioEncoding.LINEAR16,
