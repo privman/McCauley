@@ -52,22 +52,26 @@ def _chunk_content(headline: str, sbis: list[tuple[str, str, str]]) -> str:
     return "\n\n".join(parts)
 
 
-async def _embed(text_in: str) -> list[float]:
-    """Voyage embedding; falls back to zeros so seed works without credentials."""
+async def _embed_batch(texts: list[str]) -> list[list[float]]:
+    """Voyage embedding for a batch of texts; falls back to zeros without a key.
+
+    Batched so the seed makes one Voyage call instead of N (relevant for
+    the free-tier 3 RPM limit).
+    """
     settings = get_settings()
     if not settings.voyage_api_key:
-        logger.warning("VOYAGE_API_KEY not set — using zero embedding")
-        return [0.0] * 1024
+        logger.warning("VOYAGE_API_KEY not set — using zero embeddings")
+        return [[0.0] * 1024 for _ in texts]
     import voyageai  # type: ignore[import-untyped]
 
     client = voyageai.Client(api_key=settings.voyage_api_key)
-    # Run sync SDK call in a thread.
     result = await asyncio.to_thread(
-        client.embed, [text_in], model="voyage-3-large", input_type="document"
+        client.embed, texts, model="voyage-3-large", input_type="document"
     )
-    embedding = result.embeddings[0]
-    assert len(embedding) == 1024, f"expected 1024-dim, got {len(embedding)}"
-    return embedding
+    embeddings = list(result.embeddings)
+    for e in embeddings:
+        assert len(e) == 1024, f"expected 1024-dim, got {len(e)}"
+    return embeddings
 
 
 async def seed() -> None:
@@ -180,6 +184,9 @@ async def seed() -> None:
         # Pre-existing feedback records (already labeled, treated as submitted).
         with (seed_dir / "feedback.csv").open() as f:
             feedback_rows = list(csv.DictReader(f))
+
+        # Pass 1: insert feedback + sbis, build the list of chunk contents.
+        chunk_inputs: list[tuple[uuid.UUID, str]] = []  # (feedback_id, content)
         for row in feedback_rows:
             subject_kind = SubjectKind(row["subject_kind"])
             subject_user_id = (
@@ -218,11 +225,14 @@ async def seed() -> None:
                 sbis = [(s, b, i)]
             else:
                 sbis = []
+            chunk_inputs.append((fb.id, _chunk_content(fb.headline, sbis)))
+        await session.flush()
 
-            content = _chunk_content(fb.headline, sbis)
-            embedding = await _embed(content)
+        # Pass 2: one batched Voyage call, then insert chunks.
+        embeddings = await _embed_batch([content for _, content in chunk_inputs])
+        for (fb_id, content), embedding in zip(chunk_inputs, embeddings, strict=True):
             session.add(
-                FeedbackChunk(feedback_id=fb.id, content=content, embedding=embedding)
+                FeedbackChunk(feedback_id=fb_id, content=content, embedding=embedding)
             )
         await session.commit()
         logger.info("seeded %d feedback records", len(feedback_rows))
