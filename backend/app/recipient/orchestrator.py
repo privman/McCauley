@@ -172,6 +172,8 @@ class RecipientConversation:
         return {"error": f"unknown tool {name}"}, []
 
     async def step(self, session: AsyncSession, user_text: str) -> RecipientTurnResult:
+        # TODO(#2): compact self.history every N turns. Recipient mode has no
+        # drafts, so only the N-turn trigger applies here.
         self.history.append({"role": "user", "content": user_text})
         all_sources: list[dict[str, Any]] = []
 

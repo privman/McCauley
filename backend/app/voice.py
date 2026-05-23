@@ -7,46 +7,129 @@ sends the audio back. No barge-in, no streaming partial transcripts to
 the UI (that's a UX upgrade for later).
 
 Audio format: 16kHz mono LINEAR16 PCM in both directions.
+
+STT uses the Speech-to-Text v2 API with the chirp_2 model — chirp_2 is
+not available on v1. v2 requires a recognizer URI scoped to a GCP
+project; we read the project id from GOOGLE_CLOUD_PROJECT, falling back
+to the project_id field in the service-account JSON.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+STT_LOCATION = "global"
+STT_MODEL = "chirp_2"
 
 
-async def transcribe(audio_bytes: bytes) -> str:
-    """Run a one-shot Google STT recognition over a complete utterance.
+# Tagged-union result for transcribe(). Lets the WS handler distinguish
+# the three outcomes — useful text, user-was-silent, and our-side-failed
+# — and react with appropriate UX (the user-facing message for an STT
+# outage shouldn't be the same as the response to a silent buffer).
+@dataclass(frozen=True)
+class TranscriptText:
+    text: str
 
-    Streaming is supported in the upstream API but for push-to-talk we
-    can wait until the user releases the mic and then send the whole
-    utterance — much simpler and the latency penalty is small.
+
+@dataclass(frozen=True)
+class TranscriptSilence:
+    """No speech detected in the audio (silence, noise, empty buffer)."""
+
+
+@dataclass(frozen=True)
+class TranscriptError:
+    """STT call failed. `reason` is a human-readable summary for logs."""
+
+    reason: str
+
+
+TranscriptionResult = TranscriptText | TranscriptSilence | TranscriptError
+
+
+@lru_cache(maxsize=1)
+def _gcp_project_id() -> str:
+    """Resolve the GCP project id for the v2 STT recognizer URI."""
+    env = os.getenv("GOOGLE_CLOUD_PROJECT")
+    if env:
+        return env
+    creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if creds_path and os.path.exists(creds_path):
+        with open(creds_path) as f:
+            data = json.load(f)
+        pid = data.get("project_id")
+        if pid:
+            return pid
+    raise RuntimeError(
+        "Cannot determine GCP project id. Set GOOGLE_CLOUD_PROJECT or "
+        "ensure the service-account JSON at GOOGLE_APPLICATION_CREDENTIALS "
+        "contains a project_id field."
+    )
+
+
+async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
+    """Run a one-shot Google STT v2 recognition over a complete utterance.
+
+    Push-to-talk only needs the final transcript, so we wait until the
+    user releases the mic and send the whole utterance — no streaming.
+
+    Returns a TranscriptionResult union so the caller can distinguish:
+      - TranscriptText:    we got text back
+      - TranscriptSilence: empty buffer or STT returned no results
+      - TranscriptError:   the STT call itself failed (network, auth,
+                           config, quota) — caller should surface a
+                           user-facing message, not silently drop the turn
     """
     if not audio_bytes:
-        return ""
-    from google.cloud import speech  # type: ignore[attr-defined]
+        return TranscriptSilence()
+    from google.cloud.speech_v2 import SpeechClient, types  # type: ignore[attr-defined]
+
+    project = _gcp_project_id()
+    recognizer = f"projects/{project}/locations/{STT_LOCATION}/recognizers/_"
 
     def _sync_recognize() -> str:
-        client = speech.SpeechClient()
-        audio = speech.RecognitionAudio(content=audio_bytes)
-        config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=SAMPLE_RATE,
-            language_code="en-US",
-            enable_automatic_punctuation=True,
-            model="chirp_2",
+        client = SpeechClient()
+        config = types.RecognitionConfig(
+            explicit_decoding_config=types.ExplicitDecodingConfig(
+                encoding=types.ExplicitDecodingConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=SAMPLE_RATE,
+                audio_channel_count=1,
+            ),
+            language_codes=["en-US"],
+            model=STT_MODEL,
+            features=types.RecognitionFeatures(
+                enable_automatic_punctuation=True,
+            ),
         )
-        resp = client.recognize(config=config, audio=audio)
+        request = types.RecognizeRequest(
+            recognizer=recognizer,
+            config=config,
+            content=audio_bytes,
+        )
+        resp = client.recognize(request=request)
         if not resp.results:
             return ""
-        return " ".join(r.alternatives[0].transcript for r in resp.results if r.alternatives)
+        return " ".join(
+            r.alternatives[0].transcript for r in resp.results if r.alternatives
+        )
 
-    return await asyncio.to_thread(_sync_recognize)
+    try:
+        text = await asyncio.to_thread(_sync_recognize)
+    except Exception as e:
+        logger.exception("STT failed")
+        return TranscriptError(reason=str(e))
+
+    if not text.strip():
+        return TranscriptSilence()
+    return TranscriptText(text=text)
 
 
 async def synthesize(text: str) -> AsyncIterator[bytes]:

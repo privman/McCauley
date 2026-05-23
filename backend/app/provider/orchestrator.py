@@ -28,12 +28,13 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from anthropic.types import MessageParam, ToolParam
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
 from app.llm import sonnet_message
-from app.models import Feedback, FeedbackStatus, SBIInstance, SubjectKind
+from app.models import Feedback, FeedbackStatus, OrgUnit, SBIInstance, SubjectKind, User
 from app.provider.state import DraftStack
 from app.skills import load_skill, skill_index_for_prompt
 from app.submit import finalize_submission
@@ -237,9 +238,49 @@ class ProviderConversation:
             field_name = args["field"]
             value = args["value"]
             if field_name == "subject":
-                draft.subject_kind = value["kind"]
-                draft.subject_id = uuid.UUID(value["id"])
-                draft.subject_name = value.get("name")
+                # SECURITY: resolve_entity is already org-scoped, but
+                # update_draft takes a raw UUID — a prompt-injected turn could
+                # pass an id from a different tenant. Scope the lookup to
+                # self.org_id and refuse the write if it doesn't resolve, so
+                # cross-tenant ids never make it onto draft.subject_id (let
+                # alone get persisted at submit time) and the model can't
+                # learn the name of another tenant's user/unit.
+                subj_id = uuid.UUID(value["id"])
+                if value["kind"] == "user":
+                    u = await session.scalar(
+                        select(User).where(
+                            User.id == subj_id,
+                            User.org_id == self.org_id,
+                        )
+                    )
+                    if u is None:
+                        return {
+                            "ok": False,
+                            "error": "subject user not found in your org — re-resolve and try again",
+                        }, None
+                    draft.subject_kind = "user"
+                    draft.subject_id = u.id
+                    draft.subject_name = u.name
+                elif value["kind"] == "unit":
+                    ou = await session.scalar(
+                        select(OrgUnit).where(
+                            OrgUnit.id == subj_id,
+                            OrgUnit.org_id == self.org_id,
+                        )
+                    )
+                    if ou is None:
+                        return {
+                            "ok": False,
+                            "error": "subject unit not found in your org — re-resolve and try again",
+                        }, None
+                    draft.subject_kind = "unit"
+                    draft.subject_id = ou.id
+                    draft.subject_name = ou.name
+                else:
+                    return {
+                        "ok": False,
+                        "error": f"unknown subject kind {value['kind']!r}",
+                    }, None
             elif field_name == "headline":
                 draft.headline = str(value)
             elif field_name == "is_anonymous":
@@ -321,6 +362,10 @@ class ProviderConversation:
         if self.stack.current is None:
             self.stack.new_draft()
 
+        # TODO(#2): compact self.history before appending — every N turns and
+        # whenever the user pivots/resumes a draft (history from a different
+        # draft is rarely useful context). Untrimmed history is what's driving
+        # the Anthropic 30k input-tokens/min ceiling during active testing.
         self.history.append({"role": "user", "content": user_text})
 
         submitted: list[uuid.UUID] = []
