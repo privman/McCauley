@@ -9,6 +9,13 @@ type Source = {
   submitted_at: string | null;
 };
 
+const EXAMPLE_PROMPTS = [
+  "What feedback came in about my reports this month?",
+  "Summarise feedback about Priya.",
+  "Generate a report on the Mobile team in Q1.",
+  "What are the top themes in feedback about delivery?",
+];
+
 export default function MyFeedback() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
@@ -44,16 +51,7 @@ export default function MyFeedback() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-full min-h-0">
-      <aside className="bg-white border border-slate-200 rounded-xl p-4 text-sm">
-        <h3 className="text-xs uppercase font-medium text-slate-500 mb-3">Tips</h3>
-        <ul className="space-y-2 text-slate-600">
-          <li>"What feedback came in about my reports this month?"</li>
-          <li>"Summarise feedback about Priya."</li>
-          <li>"Generate a report on the Mobile team in Q1."</li>
-          <li>"What are the top themes in feedback about delivery?"</li>
-        </ul>
-      </aside>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-0">
       <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
@@ -74,28 +72,43 @@ export default function MyFeedback() {
             </div>
           ))}
         </div>
-        <div className="border-t border-slate-200 p-3 flex items-center gap-2">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") send(draft);
-            }}
-            placeholder="Ask a question…"
-            className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
-          />
-          <button
-            onClick={() => send(draft)}
-            className="px-3 py-2 bg-slate-800 text-white rounded text-sm"
-          >
-            Send
-          </button>
-          <button
-            onClick={() => send("Generate a report on the feedback I have access to in the last 90 days.")}
-            className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700"
-          >
-            Generate report
-          </button>
+        <div className="border-t border-slate-200">
+          {messages.length === 0 && (
+            <div className="px-3 pt-3 flex flex-wrap gap-2">
+              {EXAMPLE_PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => send(p)}
+                  className="px-3 py-1.5 text-xs rounded-full border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="p-3 flex items-center gap-2">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") send(draft);
+              }}
+              placeholder="Ask a question…"
+              className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
+            />
+            <button
+              onClick={() => send(draft)}
+              className="px-3 py-2 bg-slate-800 text-white rounded text-sm"
+            >
+              Send
+            </button>
+            <button
+              onClick={() => send("Generate a report on the feedback I have access to in the last 90 days.")}
+              className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700"
+            >
+              Generate report
+            </button>
+          </div>
         </div>
       </div>
       <aside className="bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
