@@ -331,6 +331,10 @@ class ProviderConversation:
         if self.stack.current is None:
             self.stack.new_draft()
 
+        # TODO(#2): compact self.history before appending — every N turns and
+        # whenever the user pivots/resumes a draft (history from a different
+        # draft is rarely useful context). Untrimmed history is what's driving
+        # the Anthropic 30k input-tokens/min ceiling during active testing.
         self.history.append({"role": "user", "content": user_text})
 
         submitted: list[uuid.UUID] = []
