@@ -30,6 +30,7 @@ from typing import Any, cast
 from anthropic.types import MessageParam, ToolParam
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.current_user import UserProfile
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
 from app.llm import sonnet_message
@@ -46,6 +47,8 @@ You are McCauley, a conversational AI helping an employee provide structured
 peer feedback. Capture each piece of feedback as a Situation-Behavior-Impact
 record using the tools provided.
 
+{current_user_block}
+
 Style: warm, brief, professional. Ask one question at a time. Echo the
 captured fields back to the user as they fill in.
 
@@ -53,6 +56,8 @@ Rules:
 - Always call resolve_entity to look up people or units by name. If it
   returns more than one plausible match, ask the user a disambiguation
   question THIS TURN before any further field write.
+- The user cannot be the subject of their own feedback. If they try,
+  tell them so and ask who the feedback is actually about.
 - Capture in this order: subject -> headline (the point) -> SBI examples.
 - After each SBI is captured, ask if there is another example supporting
   the same point.
@@ -216,11 +221,15 @@ class ProviderConversation:
     conversation_id: uuid.UUID
     user_id: uuid.UUID
     org_id: uuid.UUID
+    current_user: UserProfile
     stack: DraftStack = field(default_factory=DraftStack)
     history: list[MessageParam] = field(default_factory=list)
 
     def system_prompt(self) -> str:
-        return SYSTEM_PROMPT.format(skill_index=skill_index_for_prompt())
+        return SYSTEM_PROMPT.format(
+            current_user_block=self.current_user.prompt_block(),
+            skill_index=skill_index_for_prompt(),
+        )
 
     async def handle_tool(
         self, session: AsyncSession, name: str, args: dict[str, Any]
@@ -375,12 +384,19 @@ _active: dict[uuid.UUID, ProviderConversation] = {}
 
 
 def get_or_create(
-    conversation_id: uuid.UUID, *, user_id: uuid.UUID, org_id: uuid.UUID
+    conversation_id: uuid.UUID,
+    *,
+    user_id: uuid.UUID,
+    org_id: uuid.UUID,
+    current_user: UserProfile,
 ) -> ProviderConversation:
     convo = _active.get(conversation_id)
     if convo is None:
         convo = ProviderConversation(
-            conversation_id=conversation_id, user_id=user_id, org_id=org_id
+            conversation_id=conversation_id,
+            user_id=user_id,
+            org_id=org_id,
+            current_user=current_user,
         )
         _active[conversation_id] = convo
     return convo

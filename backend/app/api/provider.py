@@ -16,6 +16,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import _user_id_from_cookie, COOKIE_NAME
+from app.current_user import UserProfile, load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
 from app.provider.orchestrator import drop, get_or_create
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/ws", tags=["provider"])
 
 async def _authenticate(
     ws: WebSocket, cookie: str | None
-) -> tuple[uuid.UUID, uuid.UUID] | None:
+) -> tuple[uuid.UUID, uuid.UUID, UserProfile] | None:
     user_id = _user_id_from_cookie(cookie)
     if user_id is None:
         await ws.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -37,7 +38,8 @@ async def _authenticate(
         if user is None or not user.active:
             await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return None
-        return user.id, user.org_id
+        current_user = await load_current_user(session, user.id)
+        return user.id, user.org_id, current_user
 
 
 async def _set_pg_user(session: AsyncSession, user_id: uuid.UUID) -> None:
@@ -54,7 +56,7 @@ async def provider_ws(
     auth = await _authenticate(ws, cookie)
     if auth is None:
         return
-    user_id, org_id = auth
+    user_id, org_id, current_user = auth
 
     # Open or resume a conversation row.
     async with sessionmaker()() as session:
@@ -74,7 +76,9 @@ async def provider_ws(
             await session.refresh(convo)
             convo_id = convo.id
 
-    orchestrator = get_or_create(convo_id, user_id=user_id, org_id=org_id)
+    orchestrator = get_or_create(
+        convo_id, user_id=user_id, org_id=org_id, current_user=current_user
+    )
     await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
 
     try:
