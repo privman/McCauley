@@ -55,6 +55,33 @@ async def sonnet_message(
     return await client().messages.create(**kwargs)
 
 
+def sonnet_stream(
+    *,
+    system: str,
+    messages: list[MessageParam],
+    tools: list[ToolParam] | None = None,
+    max_tokens: int = 1024,
+) -> Any:
+    """Return the SDK's stream() async context manager pre-configured for Sonnet.
+
+    Use as:
+        async with sonnet_stream(...) as stream:
+            async for event in stream:
+                ...
+            final = await stream.get_final_message()
+    """
+    settings = get_settings()
+    kwargs: dict[str, Any] = {
+        "model": settings.sonnet_model,
+        "system": system,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    if tools:
+        kwargs["tools"] = tools
+    return client().messages.stream(**kwargs)
+
+
 async def haiku_classify(
     *,
     system: str,

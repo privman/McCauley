@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import _user_id_from_cookie, COOKIE_NAME
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.provider.orchestrator import drop, get_or_create
+from app.provider.orchestrator import TextDelta, TurnResult, drop, get_or_create
+from app.viewer import ViewerProfile, load_viewer
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/ws", tags=["provider"])
 
 async def _authenticate(
     ws: WebSocket, cookie: str | None
-) -> tuple[uuid.UUID, uuid.UUID] | None:
+) -> tuple[uuid.UUID, uuid.UUID, ViewerProfile] | None:
     user_id = _user_id_from_cookie(cookie)
     if user_id is None:
         await ws.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -37,7 +38,8 @@ async def _authenticate(
         if user is None or not user.active:
             await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return None
-        return user.id, user.org_id
+        viewer = await load_viewer(session, user.id)
+        return user.id, user.org_id, viewer
 
 
 async def _set_pg_user(session: AsyncSession, user_id: uuid.UUID) -> None:
@@ -54,7 +56,7 @@ async def provider_ws(
     auth = await _authenticate(ws, cookie)
     if auth is None:
         return
-    user_id, org_id = auth
+    user_id, org_id, viewer = auth
 
     # Open or resume a conversation row.
     async with sessionmaker()() as session:
@@ -74,10 +76,12 @@ async def provider_ws(
             await session.refresh(convo)
             convo_id = convo.id
 
-    orchestrator = get_or_create(convo_id, user_id=user_id, org_id=org_id)
-    await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
+    orchestrator = get_or_create(
+        convo_id, user_id=user_id, org_id=org_id, viewer=viewer
+    )
 
     try:
+        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
             raw = await ws.receive_text()
             try:
@@ -90,12 +94,26 @@ async def provider_ws(
                 await ws.send_json({"type": "error", "message": f"unknown type {mtype}"})
                 continue
             user_text = msg.get("text", "")
+            logger.info(
+                "provider convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(user_text),
+            )
 
+            result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await _set_pg_user(session, user_id)
-                    result = await orchestrator.step(session, user_text)
+                    async for event in orchestrator.step(session, user_text):
+                        if isinstance(event, TextDelta):
+                            await ws.send_json(
+                                {"type": "assistant_text_delta", "text": event.text}
+                            )
+                        else:
+                            result = event
 
+            assert result is not None  # orchestrator always yields a final TurnResult
             await ws.send_json(
                 {"type": "draft_state", "stack": result.stack_payload}
             )
@@ -103,6 +121,12 @@ async def provider_ws(
                 await ws.send_json({"type": "submitted", "feedback_id": str(fb_id)})
             await ws.send_json(
                 {"type": "assistant_text", "text": result.assistant_text}
+            )
+            logger.info(
+                "provider convo=%s response_complete chars=%d submitted=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.submitted_feedback_ids),
             )
     except WebSocketDisconnect:
         # Keep the orchestrator alive in case the client reconnects with the

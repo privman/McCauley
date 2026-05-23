@@ -17,7 +17,13 @@ from sqlalchemy import text as sql_text
 from app.auth import COOKIE_NAME, _user_id_from_cookie
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.recipient.orchestrator import drop, get_or_create
+from app.recipient.orchestrator import (
+    RecipientTurnResult,
+    TextDelta,
+    drop,
+    get_or_create,
+)
+from app.viewer import load_viewer
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,7 @@ async def recipient_ws(
             await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         org_id = user.org_id
+        viewer = await load_viewer(session, user.id)
 
         if conversation_id:
             convo_id = uuid.UUID(conversation_id)
@@ -52,10 +59,12 @@ async def recipient_ws(
             await session.refresh(convo)
             convo_id = convo.id
 
-    orchestrator = get_or_create(convo_id, user_id=user_id, org_id=org_id)
-    await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
+    orchestrator = get_or_create(
+        convo_id, user_id=user_id, org_id=org_id, viewer=viewer
+    )
 
     try:
+        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
             raw = await ws.receive_text()
             try:
@@ -67,18 +76,38 @@ async def recipient_ws(
                 await ws.send_json({"type": "error", "message": "unknown type"})
                 continue
             user_text = msg.get("text", "")
+            logger.info(
+                "recipient convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(user_text),
+            )
 
+            result: RecipientTurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await session.execute(
                         sql_text(f"SET LOCAL app.current_user_id = '{user_id}'")
                     )
-                    result = await orchestrator.step(session, user_text)
+                    async for event in orchestrator.step(session, user_text):
+                        if isinstance(event, TextDelta):
+                            await ws.send_json(
+                                {"type": "assistant_text_delta", "text": event.text}
+                            )
+                        else:
+                            result = event
 
+            assert result is not None
             if result.sources:
                 await ws.send_json({"type": "sources", "items": result.sources})
             await ws.send_json(
                 {"type": "assistant_text", "text": result.assistant_text}
+            )
+            logger.info(
+                "recipient convo=%s response_complete chars=%d sources=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.sources),
             )
     except WebSocketDisconnect:
         logger.info("recipient WS disconnected for convo %s", convo_id)

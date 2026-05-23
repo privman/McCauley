@@ -25,7 +25,8 @@ from sqlalchemy import text as sql_text
 from app.auth import COOKIE_NAME, _user_id_from_cookie
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.provider.orchestrator import get_or_create
+from app.provider.orchestrator import TextDelta, TurnResult, get_or_create
+from app.viewer import load_viewer
 from app.voice import synthesize, transcribe
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ async def voice_ws(
             await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         org_id = user.org_id
+        viewer = await load_viewer(session, user.id)
 
         if conversation_id:
             convo_id = uuid.UUID(conversation_id)
@@ -61,11 +63,13 @@ async def voice_ws(
             await session.refresh(convo)
             convo_id = convo.id
 
-    orchestrator = get_or_create(convo_id, user_id=user_id, org_id=org_id)
-    await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
+    orchestrator = get_or_create(
+        convo_id, user_id=user_id, org_id=org_id, viewer=viewer
+    )
 
     pcm_buffer = bytearray()
     try:
+        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
             msg = await ws.receive()
             if msg["type"] == "websocket.disconnect":
@@ -100,17 +104,37 @@ async def voice_ws(
             if not transcript:
                 continue
 
+            logger.info(
+                "voice convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(transcript),
+            )
+
+            result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await session.execute(
                         sql_text(f"SET LOCAL app.current_user_id = '{user_id}'")
                     )
-                    result = await orchestrator.step(session, transcript)
+                    # Voice doesn't stream text to the client — TTS plays at the
+                    # end of the turn — so we drain the generator and only use
+                    # the final TurnResult.
+                    async for event in orchestrator.step(session, transcript):
+                        if not isinstance(event, TextDelta):
+                            result = event
 
+            assert result is not None
             await ws.send_json({"type": "draft_state", "stack": result.stack_payload})
             for fb_id in result.submitted_feedback_ids:
                 await ws.send_json({"type": "submitted", "feedback_id": str(fb_id)})
             await ws.send_json({"type": "assistant_text", "text": result.assistant_text})
+            logger.info(
+                "voice convo=%s response_complete chars=%d submitted=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.submitted_feedback_ids),
+            )
 
             try:
                 async for chunk in synthesize(result.assistant_text):
