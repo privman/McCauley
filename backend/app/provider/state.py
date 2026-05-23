@@ -39,6 +39,19 @@ class FeedbackDraft:
     is_anonymous: bool = False
     sbis: list[SBIDraft] = field(default_factory=list)
 
+    @property
+    def is_empty(self) -> bool:
+        """True if no real information has been captured yet.
+
+        `is_anonymous` defaults to False on every draft and so isn't a
+        signal of user intent; we ignore it for the empty check.
+        """
+        if self.subject_kind is not None or self.headline:
+            return False
+        return not any(
+            s.situation or s.behavior or s.impact or s.occurred_at for s in self.sbis
+        )
+
     def add_sbi(self) -> SBIDraft:
         sbi = SBIDraft(idx=len(self.sbis))
         self.sbis.append(sbi)
@@ -63,6 +76,7 @@ class FeedbackDraft:
     def to_payload(self) -> dict[str, object]:
         return {
             "local_id": self.local_id,
+            "is_empty": self.is_empty,
             "subject": (
                 {
                     "kind": self.subject_kind,

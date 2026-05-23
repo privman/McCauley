@@ -9,6 +9,8 @@ description: Offer one last addition, confirm what happens next, brief genuine a
 ## When to fire
 All feedback items have been confirmed and captured, or the provider indicates they're done.
 
+A draft with `is_empty: true` in `list_drafts` is just an unused workspace — it doesn't count as an in-flight item. Treat the conversation as ready to close when every non-empty draft has been submitted or explicitly set aside, even if an empty workspace draft is still around.
+
 ## Purpose
 Wrap up cleanly, set expectations for what happens next, leave the provider feeling the time was well-spent.
 

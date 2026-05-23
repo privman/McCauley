@@ -10,6 +10,7 @@ type SBI = {
 };
 export type Draft = {
   local_id: string;
+  is_empty?: boolean;
   subject: Subject | null;
   headline: string | null;
   is_anonymous: boolean;
@@ -24,7 +25,13 @@ export function DraftPane({
   stack: Stack | null;
   onPick: (local_id: string) => void;
 }) {
-  if (!stack) {
+  // Hide drafts the user hasn't put any real content into yet — those are
+  // just unused workspaces, not real items worth displaying.
+  const current = stack && stack.current && !stack.current.is_empty ? stack.current : null;
+  const paused = stack ? stack.paused.filter((d) => !d.is_empty) : [];
+  const hasAnyDraft = current !== null || paused.length > 0;
+
+  if (!hasAnyDraft) {
     return <div className="text-sm text-slate-400">No drafts yet — start talking.</div>;
   }
   return (
@@ -34,24 +41,24 @@ export function DraftPane({
           Drafts in this session
         </h3>
         <ul className="space-y-1">
-          {stack.current && (
+          {current && (
             <li>
-              <DraftRow draft={stack.current} status="current" onPick={onPick} />
+              <DraftRow draft={current} status="current" onPick={onPick} />
             </li>
           )}
-          {stack.paused.map((d) => (
+          {paused.map((d) => (
             <li key={d.local_id}>
               <DraftRow draft={d} status="paused" onPick={onPick} />
             </li>
           ))}
         </ul>
       </section>
-      {stack.current && (
+      {current && (
         <section>
           <h3 className="text-xs uppercase font-medium text-slate-500 mb-2">
-            Current draft ({stack.current.local_id})
+            Current draft ({current.local_id})
           </h3>
-          <DraftDetail draft={stack.current} />
+          <DraftDetail draft={current} />
         </section>
       )}
     </div>
