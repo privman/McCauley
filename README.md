@@ -82,6 +82,27 @@ Then open <http://localhost:5173>. You'll see the user-picker login.
   instance over the network or seeding real users.
 - `POSTGRES_URL` — already wired by compose; override only if you point at an external DB.
 
+## Logging
+
+The backend uses Python's standard `logging`. App-level loggers (`app.*`)
+emit:
+
+- **INFO** when a user message arrives and when an agent response is
+  complete, in both provider and recipient modes (and voice).
+- **DEBUG** for fine-grained events: each text chunk received from the
+  model, each tool-call round.
+
+Adjust with `LOG_LEVEL` in `ops/.env` (default `INFO`):
+
+```
+LOG_LEVEL=DEBUG     # see every streamed chunk + tool rounds
+LOG_LEVEL=INFO      # default — turn-level only
+LOG_LEVEL=WARNING   # quiet — only problems
+```
+
+Uvicorn's own loggers (request lines, access logs) are independent. To
+change those, pass `--log-level` in `backend/entrypoint.sh`.
+
 ## Tests
 
 ```bash

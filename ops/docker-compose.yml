@@ -31,6 +31,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev-secret}
       SKILLS_DIR: /app/skills
       SEED_DIR: /app/seed
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "8000:8000"
     volumes:

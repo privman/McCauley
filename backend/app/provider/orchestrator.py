@@ -410,7 +410,12 @@ class ProviderConversation:
         submitted: list[uuid.UUID] = []
         full_text_parts: list[str] = []
 
-        for _ in range(16):  # safety bound on tool-call rounds per user turn
+        for round_idx in range(16):  # safety bound on tool-call rounds per user turn
+            logger.debug(
+                "provider convo=%s sonnet_stream_start round=%d",
+                self.conversation_id,
+                round_idx,
+            )
             async with sonnet_stream(
                 system=self.system_prompt(),
                 messages=self.history,
@@ -423,6 +428,11 @@ class ProviderConversation:
                     ):
                         chunk = event.delta.text
                         full_text_parts.append(chunk)
+                        logger.debug(
+                            "provider convo=%s chunk_received chars=%d",
+                            self.conversation_id,
+                            len(chunk),
+                        )
                         yield TextDelta(text=chunk)
                 final_msg = await stream.get_final_message()
 
@@ -438,6 +448,12 @@ class ProviderConversation:
                 )
                 return
 
+            logger.debug(
+                "provider convo=%s tool_round round=%d tools=%s",
+                self.conversation_id,
+                round_idx,
+                [tu.name for tu in tool_uses],
+            )
             tool_results: list[dict[str, Any]] = []
             for tu in tool_uses:
                 try:

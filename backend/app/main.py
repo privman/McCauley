@@ -1,3 +1,5 @@
+import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -9,6 +11,14 @@ from app.api import provider as provider_api
 from app.api import recipient as recipient_api
 from app.api import voice as voice_api
 from app.skills import load_skills
+
+# Configure app-level logging. The default is INFO so user-turn / response
+# logs are visible; set LOG_LEVEL=DEBUG for chunk-level detail, or WARNING
+# to quiet it down. Uvicorn's own loggers are separate (see README).
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 
 @asynccontextmanager

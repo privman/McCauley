@@ -131,6 +131,13 @@ async def voice_ws(
             transcript = transcript_result.text
             await ws.send_json({"type": "transcript", "text": transcript})
 
+            logger.info(
+                "voice convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(transcript),
+            )
+
             result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
@@ -149,6 +156,12 @@ async def voice_ws(
             for fb_id in result.submitted_feedback_ids:
                 await ws.send_json({"type": "submitted", "feedback_id": str(fb_id)})
             await ws.send_json({"type": "assistant_text", "text": result.assistant_text})
+            logger.info(
+                "voice convo=%s response_complete chars=%d submitted=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.submitted_feedback_ids),
+            )
 
             try:
                 async for chunk in synthesize(result.assistant_text):

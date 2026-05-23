@@ -94,6 +94,12 @@ async def provider_ws(
                 await ws.send_json({"type": "error", "message": f"unknown type {mtype}"})
                 continue
             user_text = msg.get("text", "")
+            logger.info(
+                "provider convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(user_text),
+            )
 
             result: TurnResult | None = None
             async with sessionmaker()() as session:
@@ -115,6 +121,12 @@ async def provider_ws(
                 await ws.send_json({"type": "submitted", "feedback_id": str(fb_id)})
             await ws.send_json(
                 {"type": "assistant_text", "text": result.assistant_text}
+            )
+            logger.info(
+                "provider convo=%s response_complete chars=%d submitted=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.submitted_feedback_ids),
             )
     except WebSocketDisconnect:
         # Keep the orchestrator alive in case the client reconnects with the

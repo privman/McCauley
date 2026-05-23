@@ -76,6 +76,12 @@ async def recipient_ws(
                 await ws.send_json({"type": "error", "message": "unknown type"})
                 continue
             user_text = msg.get("text", "")
+            logger.info(
+                "recipient convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(user_text),
+            )
 
             result: RecipientTurnResult | None = None
             async with sessionmaker()() as session:
@@ -96,6 +102,12 @@ async def recipient_ws(
                 await ws.send_json({"type": "sources", "items": result.sources})
             await ws.send_json(
                 {"type": "assistant_text", "text": result.assistant_text}
+            )
+            logger.info(
+                "recipient convo=%s response_complete chars=%d sources=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.sources),
             )
     except WebSocketDisconnect:
         logger.info("recipient WS disconnected for convo %s", convo_id)

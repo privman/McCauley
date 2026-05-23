@@ -211,7 +211,12 @@ class RecipientConversation:
         all_sources: list[dict[str, Any]] = []
         full_text_parts: list[str] = []
 
-        for _ in range(6):
+        for round_idx in range(6):
+            logger.debug(
+                "recipient convo=%s sonnet_stream_start round=%d",
+                self.conversation_id,
+                round_idx,
+            )
             async with sonnet_stream(
                 system=self.system_prompt(),
                 messages=self.history,
@@ -225,6 +230,11 @@ class RecipientConversation:
                     ):
                         chunk = event.delta.text
                         full_text_parts.append(chunk)
+                        logger.debug(
+                            "recipient convo=%s chunk_received chars=%d",
+                            self.conversation_id,
+                            len(chunk),
+                        )
                         yield TextDelta(text=chunk)
                 final_msg = await stream.get_final_message()
 
@@ -237,6 +247,13 @@ class RecipientConversation:
                     sources=all_sources,
                 )
                 return
+
+            logger.debug(
+                "recipient convo=%s tool_round round=%d tools=%s",
+                self.conversation_id,
+                round_idx,
+                [tu.name for tu in tool_uses],
+            )
 
             tool_results: list[dict[str, Any]] = []
             for tu in tool_uses:
