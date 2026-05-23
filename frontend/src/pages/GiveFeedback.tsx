@@ -52,13 +52,35 @@ export default function GiveFeedback() {
   useEffect(() => {
     // Text WS for typed turns.
     const ws = new WebSocket(wsUrl("/ws/provider"));
+    ws.onopen = () => console.info("[provider WS] open");
+    ws.onerror = (e) => console.error("[provider WS] error", e);
     ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
-    ws.onclose = () => (textWsRef.current = null);
+    ws.onclose = (e) => {
+      console.info("[provider WS] close", e.code, e.reason);
+      textWsRef.current = null;
+      setPending((wasPending) => {
+        if (wasPending) {
+          clearThinkingTimer();
+          setPartial("");
+          setMessages((m) => [
+            ...m,
+            { role: "bot", text: "(connection lost — refresh to reconnect)" },
+          ]);
+        }
+        return false;
+      });
+    };
     textWsRef.current = ws;
     return () => {
       if (thinkingTimerRef.current !== null) {
         window.clearTimeout(thinkingTimerRef.current);
       }
+      // Disarm callbacks before close — otherwise the async onclose from
+      // StrictMode's cleanup would null out textWsRef.current which by then
+      // points to the NEW WebSocket from the remount.
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
       ws.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,13 +124,22 @@ export default function GiveFeedback() {
 
   async function send(text: string) {
     if (!text.trim() || pending) return;
+    const ws = textWsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn("[provider WS] send while not OPEN", ws?.readyState);
+      setMessages((m) => [
+        ...m,
+        { role: "bot", text: "(not connected — refresh the page)" },
+      ]);
+      return;
+    }
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setPartial("");
     setPending(true);
     stickToBottom();
     armThinkingTimer();
-    textWsRef.current?.send(JSON.stringify({ type: "user_text", text }));
+    ws.send(JSON.stringify({ type: "user_text", text }));
     inputRef.current?.focus();
   }
 

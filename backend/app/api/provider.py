@@ -79,9 +79,9 @@ async def provider_ws(
     orchestrator = get_or_create(
         convo_id, user_id=user_id, org_id=org_id, current_user=current_user
     )
-    await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
 
     try:
+        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
             raw = await ws.receive_text()
             try:

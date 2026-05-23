@@ -57,6 +57,24 @@ export default function MyFeedback() {
 
   useEffect(() => {
     const ws = new WebSocket(wsUrl("/ws/recipient"));
+    ws.onopen = () => console.info("[recipient WS] open");
+    ws.onerror = (e) => console.error("[recipient WS] error", e);
+    ws.onclose = (e) => {
+      console.info("[recipient WS] close", e.code, e.reason);
+      wsRef.current = null;
+      // If a request was in-flight, surface the loss rather than spin forever.
+      setPending((wasPending) => {
+        if (wasPending) {
+          clearThinkingTimer();
+          setPartial("");
+          setMessages((m) => [
+            ...m,
+            { role: "bot", text: "(connection lost — refresh to reconnect)" },
+          ]);
+        }
+        return false;
+      });
+    };
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       switch (msg.type) {
@@ -86,12 +104,27 @@ export default function MyFeedback() {
       if (thinkingTimerRef.current !== null) {
         window.clearTimeout(thinkingTimerRef.current);
       }
+      // Disarm the close handler before closing — otherwise its async fire
+      // (after StrictMode's cleanup-then-remount) would null out wsRef.current
+      // which by then points to the NEW WebSocket from the remount.
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
       ws.close();
     };
   }, []);
 
   function send(text: string) {
-    if (!text.trim() || pending || !wsRef.current) return;
+    if (!text.trim() || pending) return;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn("[recipient WS] send while not OPEN", ws?.readyState);
+      setMessages((m) => [
+        ...m,
+        { role: "bot", text: "(not connected — refresh the page)" },
+      ]);
+      return;
+    }
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setSources([]);
@@ -99,7 +132,7 @@ export default function MyFeedback() {
     setPending(true);
     stickToBottom();
     armThinkingTimer();
-    wsRef.current.send(JSON.stringify({ type: "user_text", text }));
+    ws.send(JSON.stringify({ type: "user_text", text }));
     // Re-focus so the user can keep typing while the agent responds.
     inputRef.current?.focus();
   }
