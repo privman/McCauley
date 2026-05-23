@@ -8,7 +8,13 @@ type Source = {
   id: string;
   headline: string;
   subject: string | null;
+  subject_kind: "user" | "unit" | null;
+  sentiment: "positive" | "constructive" | "negative" | "mixed" | null;
+  topic_tags: string[];
+  provider: string | null;
+  is_anonymous: boolean;
   submitted_at: string | null;
+  content: string;
 };
 
 const EXAMPLE_PROMPTS = [
@@ -26,6 +32,7 @@ export default function MyFeedback() {
   const [pending, setPending] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const thinkingTimerRef = useRef<number | null>(null);
@@ -90,6 +97,7 @@ export default function MyFeedback() {
           break;
         case "sources":
           setSources(msg.items);
+          setSelectedSourceId(null);
           break;
         case "error":
           clearThinkingTimer();
@@ -128,6 +136,7 @@ export default function MyFeedback() {
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setSources([]);
+    setSelectedSourceId(null);
     setPartial("");
     setPending(true);
     stickToBottom();
@@ -215,29 +224,157 @@ export default function MyFeedback() {
         </div>
       </div>
       <aside className="bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
-        <h3 className="text-xs uppercase font-medium text-slate-500 px-4 pt-4 pb-3 shrink-0">
-          Sources ({sources.length})
-        </h3>
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-          {sources.length === 0 && (
-            <div className="text-slate-400 text-sm">
-              Citations appear here after the bot answers.
-            </div>
-          )}
-          <ul className="space-y-2 text-sm">
-            {sources.map((s) => (
-              <li key={s.id} className="border border-slate-200 rounded p-2">
+        {selectedSourceId === null ? (
+          <SourceList
+            sources={sources}
+            onSelect={(id) => setSelectedSourceId(id)}
+          />
+        ) : (
+          <SourceDetail
+            source={sources.find((s) => s.id === selectedSourceId) ?? null}
+            onBack={() => setSelectedSourceId(null)}
+          />
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function SourceList({
+  sources,
+  onSelect,
+}: {
+  sources: Source[];
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <>
+      <h3 className="text-xs uppercase font-medium text-slate-500 px-4 pt-4 pb-3 shrink-0">
+        Sources ({sources.length})
+      </h3>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+        {sources.length === 0 && (
+          <div className="text-slate-400 text-sm">
+            Citations appear here after the bot answers.
+          </div>
+        )}
+        <ul className="space-y-2 text-sm">
+          {sources.map((s) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(s.id)}
+                className="w-full text-left border border-slate-200 rounded p-2 hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              >
                 <div className="text-slate-800">{s.headline}</div>
                 <div className="text-slate-500 text-xs mt-1">
                   about {s.subject ?? "—"} ·{" "}
                   {s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : "—"} ·{" "}
                   <span className="text-slate-400">{s.id.slice(0, 8)}…</span>
                 </div>
-              </li>
-            ))}
-          </ul>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </>
+  );
+}
+
+const SENTIMENT_STYLES: Record<string, string> = {
+  positive: "bg-emerald-100 text-emerald-800",
+  constructive: "bg-amber-100 text-amber-800",
+  negative: "bg-rose-100 text-rose-800",
+  mixed: "bg-slate-100 text-slate-700",
+};
+
+function SourceDetail({
+  source,
+  onBack,
+}: {
+  source: Source | null;
+  onBack: () => void;
+}) {
+  if (!source) {
+    // Source vanished (new query cleared the list). Bounce back.
+    return (
+      <div className="p-4 text-sm text-slate-500">
+        <button
+          onClick={onBack}
+          className="text-slate-600 hover:text-slate-900 text-xs"
+        >
+          ← Back
+        </button>
+        <div className="mt-3">This source is no longer in the current results.</div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3 shrink-0 border-b border-slate-200">
+        <button
+          onClick={onBack}
+          className="text-slate-600 hover:text-slate-900 text-xs flex items-center gap-1"
+        >
+          ← Back
+        </button>
+        <span className="text-xs uppercase font-medium text-slate-500 ml-auto">
+          Source
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 text-sm space-y-3">
+        <div>
+          <div className="text-slate-800 font-medium">{source.headline}</div>
+          <div className="text-slate-500 text-xs mt-1">
+            about {source.subject ?? "—"}
+            {source.subject_kind ? ` (${source.subject_kind})` : ""}
+          </div>
         </div>
-      </aside>
-    </div>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          <dt className="text-slate-500">From</dt>
+          <dd className="text-slate-700">
+            {source.is_anonymous ? "anonymous" : source.provider ?? "—"}
+          </dd>
+          <dt className="text-slate-500">Submitted</dt>
+          <dd className="text-slate-700">
+            {source.submitted_at
+              ? new Date(source.submitted_at).toLocaleDateString()
+              : "—"}
+          </dd>
+          <dt className="text-slate-500">ID</dt>
+          <dd className="text-slate-400 font-mono">{source.id.slice(0, 8)}…</dd>
+        </dl>
+        {(source.sentiment || source.topic_tags.length > 0) && (
+          <div className="flex flex-wrap gap-1.5">
+            {source.sentiment && (
+              <span
+                className={`px-2 py-0.5 rounded text-xs ${
+                  SENTIMENT_STYLES[source.sentiment] ??
+                  "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {source.sentiment}
+              </span>
+            )}
+            {source.topic_tags.map((t) => (
+              <span
+                key={t}
+                className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+        <div>
+          <div className="text-xs uppercase font-medium text-slate-500 mb-1">
+            Content
+          </div>
+          <div className="whitespace-pre-wrap text-slate-800">
+            {source.content}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

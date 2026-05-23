@@ -170,7 +170,13 @@ class RecipientConversation:
                 "id": str(r.id),
                 "headline": r.headline,
                 "subject": r.subject_user_name or r.subject_unit_name,
+                "subject_kind": r.subject_kind,
+                "sentiment": r.sentiment,
+                "topic_tags": r.topic_tags,
+                "provider": r.provider_name if not r.is_anonymous else None,
+                "is_anonymous": r.is_anonymous,
                 "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+                "content": r.content,
             }
             for r in results
         ]
