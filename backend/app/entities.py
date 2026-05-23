@@ -60,7 +60,7 @@ async def resolve(
                     FROM users u
                     LEFT JOIN users m ON m.id = u.manager_id
                     WHERE u.active
-                      AND (:org IS NULL OR u.org_id = :org)
+                      AND (CAST(:org AS uuid) IS NULL OR u.org_id = CAST(:org AS uuid))
                       AND similarity(u.name, :q) >= :threshold
                     ORDER BY s DESC
                     LIMIT :limit
@@ -94,7 +94,7 @@ async def resolve(
                            similarity(ou.name, :q) AS s
                     FROM org_units ou
                     LEFT JOIN users h ON h.id = ou.head_user_id
-                    WHERE (:org IS NULL OR ou.org_id = :org)
+                    WHERE (CAST(:org AS uuid) IS NULL OR ou.org_id = CAST(:org AS uuid))
                       AND similarity(ou.name, :q) >= :threshold
                     ORDER BY s DESC
                     LIMIT :limit
