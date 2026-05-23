@@ -26,7 +26,7 @@ from app.auth import COOKIE_NAME, _user_id_from_cookie
 from app.current_user import load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.provider.orchestrator import get_or_create
+from app.provider.orchestrator import TextDelta, TurnResult, get_or_create
 from app.voice import (
     TranscriptError,
     TranscriptSilence,
@@ -72,10 +72,10 @@ async def voice_ws(
     orchestrator = get_or_create(
         convo_id, user_id=user_id, org_id=org_id, current_user=current_user
     )
-    await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
 
     pcm_buffer = bytearray()
     try:
+        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
             msg = await ws.receive()
             if msg["type"] == "websocket.disconnect":
@@ -131,17 +131,37 @@ async def voice_ws(
             transcript = transcript_result.text
             await ws.send_json({"type": "transcript", "text": transcript})
 
+            logger.info(
+                "voice convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(transcript),
+            )
+
+            result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await session.execute(
                         sql_text(f"SET LOCAL app.current_user_id = '{user_id}'")
                     )
-                    result = await orchestrator.step(session, transcript)
+                    # Voice doesn't stream text to the client — TTS plays at the
+                    # end of the turn — so we drain the generator and only use
+                    # the final TurnResult.
+                    async for event in orchestrator.step(session, transcript):
+                        if not isinstance(event, TextDelta):
+                            result = event
 
+            assert result is not None
             await ws.send_json({"type": "draft_state", "stack": result.stack_payload})
             for fb_id in result.submitted_feedback_ids:
                 await ws.send_json({"type": "submitted", "feedback_id": str(fb_id)})
             await ws.send_json({"type": "assistant_text", "text": result.assistant_text})
+            logger.info(
+                "voice convo=%s response_complete chars=%d submitted=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.submitted_feedback_ids),
+            )
 
             try:
                 async for chunk in synthesize(result.assistant_text):

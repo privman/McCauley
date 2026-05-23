@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -17,7 +18,7 @@ from anthropic.types import MessageParam, ToolParam
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.current_user import UserProfile
-from app.llm import sonnet_message
+from app.llm import sonnet_stream
 from app.recipient.retrieval import hybrid_search
 
 logger = logging.getLogger(__name__)
@@ -108,9 +109,19 @@ def _tool_defs() -> list[ToolParam]:
 
 
 @dataclass
+class TextDelta:
+    """One chunk of assistant text, streamed as it's generated."""
+
+    text: str
+
+
+@dataclass
 class RecipientTurnResult:
     assistant_text: str
     sources: list[dict[str, Any]] = field(default_factory=list)
+
+
+StreamEvent = TextDelta | RecipientTurnResult
 
 
 @dataclass
@@ -186,25 +197,63 @@ class RecipientConversation:
             }, sources
         return {"error": f"unknown tool {name}"}, []
 
-    async def step(self, session: AsyncSession, user_text: str) -> RecipientTurnResult:
+    async def step(
+        self, session: AsyncSession, user_text: str
+    ) -> AsyncIterator[StreamEvent]:
+        """Process one user turn as a stream.
+
+        Yields TextDelta events as the model produces text, then a final
+        RecipientTurnResult with the joined text and any sources surfaced.
+        """
         # TODO(#2): compact self.history every N turns. Recipient mode has no
         # drafts, so only the N-turn trigger applies here.
         self.history.append({"role": "user", "content": user_text})
         all_sources: list[dict[str, Any]] = []
+        full_text_parts: list[str] = []
 
-        for _ in range(6):
-            msg = await sonnet_message(
+        for round_idx in range(6):
+            logger.debug(
+                "recipient convo=%s sonnet_stream_start round=%d",
+                self.conversation_id,
+                round_idx,
+            )
+            async with sonnet_stream(
                 system=self.system_prompt(),
                 messages=self.history,
                 tools=_tool_defs(),
                 max_tokens=2048,
-            )
-            self.history.append({"role": "assistant", "content": msg.content})
+            ) as stream:
+                async for event in stream:
+                    if (
+                        getattr(event, "type", None) == "content_block_delta"
+                        and getattr(event.delta, "type", None) == "text_delta"
+                    ):
+                        chunk = event.delta.text
+                        full_text_parts.append(chunk)
+                        logger.debug(
+                            "recipient convo=%s chunk_received chars=%d",
+                            self.conversation_id,
+                            len(chunk),
+                        )
+                        yield TextDelta(text=chunk)
+                final_msg = await stream.get_final_message()
 
-            tool_uses = [b for b in msg.content if b.type == "tool_use"]
+            self.history.append({"role": "assistant", "content": final_msg.content})
+
+            tool_uses = [b for b in final_msg.content if b.type == "tool_use"]
             if not tool_uses:
-                text = "".join(b.text for b in msg.content if b.type == "text").strip()
-                return RecipientTurnResult(assistant_text=text, sources=all_sources)
+                yield RecipientTurnResult(
+                    assistant_text="".join(full_text_parts).strip(),
+                    sources=all_sources,
+                )
+                return
+
+            logger.debug(
+                "recipient convo=%s tool_round round=%d tools=%s",
+                self.conversation_id,
+                round_idx,
+                [tu.name for tu in tool_uses],
+            )
 
             tool_results: list[dict[str, Any]] = []
             for tu in tool_uses:
@@ -225,7 +274,7 @@ class RecipientConversation:
                 )
             self.history.append({"role": "user", "content": tool_results})
 
-        return RecipientTurnResult(
+        yield RecipientTurnResult(
             assistant_text="(internal: too many tool rounds)", sources=all_sources
         )
 

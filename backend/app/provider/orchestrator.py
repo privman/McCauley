@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -34,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.current_user import UserProfile
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
-from app.llm import sonnet_message
+from app.llm import sonnet_stream
 from app.models import Feedback, FeedbackStatus, OrgUnit, SBIInstance, SubjectKind, User
 from app.provider.state import DraftStack
 from app.skills import load_skill, skill_index_for_prompt
@@ -212,10 +213,22 @@ def _tool_defs() -> list[ToolParam]:
 
 
 @dataclass
+class TextDelta:
+    """One chunk of assistant text, streamed as it's generated."""
+
+    text: str
+
+
+@dataclass
 class TurnResult:
+    """Final state for a completed turn. Emitted last by step()."""
+
     assistant_text: str
     stack_payload: dict[str, Any]
     submitted_feedback_ids: list[uuid.UUID] = field(default_factory=list)
+
+
+StreamEvent = TextDelta | TurnResult
 
 
 @dataclass
@@ -375,8 +388,15 @@ class ProviderConversation:
         await finalize_submission(session, fb.id)
         return fb.id
 
-    async def step(self, session: AsyncSession, user_text: str) -> TurnResult:
-        """Process one user turn: returns assistant text + new draft state."""
+    async def step(
+        self, session: AsyncSession, user_text: str
+    ) -> AsyncIterator[StreamEvent]:
+        """Process one user turn as an async stream.
+
+        Yields TextDelta events as the model produces text (across any
+        number of tool-call rounds), then a final TurnResult with the
+        full assistant text, the updated stack, and any submitted ids.
+        """
         # Ensure there's at least one draft to write into.
         if self.stack.current is None:
             self.stack.new_draft()
@@ -388,28 +408,58 @@ class ProviderConversation:
         self.history.append({"role": "user", "content": user_text})
 
         submitted: list[uuid.UUID] = []
-        for _ in range(16):  # safety bound on tool-call rounds per user turn
-            msg = await sonnet_message(
+        full_text_parts: list[str] = []
+
+        for round_idx in range(16):  # safety bound on tool-call rounds per user turn
+            logger.debug(
+                "provider convo=%s sonnet_stream_start round=%d",
+                self.conversation_id,
+                round_idx,
+            )
+            async with sonnet_stream(
                 system=self.system_prompt(),
                 messages=self.history,
                 tools=_tool_defs(),
-            )
-            # Append assistant message in the structured shape Anthropic expects.
-            self.history.append({"role": "assistant", "content": msg.content})
+            ) as stream:
+                async for event in stream:
+                    if (
+                        getattr(event, "type", None) == "content_block_delta"
+                        and getattr(event.delta, "type", None) == "text_delta"
+                    ):
+                        chunk = event.delta.text
+                        full_text_parts.append(chunk)
+                        logger.debug(
+                            "provider convo=%s chunk_received chars=%d",
+                            self.conversation_id,
+                            len(chunk),
+                        )
+                        yield TextDelta(text=chunk)
+                final_msg = await stream.get_final_message()
 
-            tool_uses = [b for b in msg.content if b.type == "tool_use"]
+            # Append assistant message in the structured shape Anthropic expects.
+            self.history.append({"role": "assistant", "content": final_msg.content})
+
+            tool_uses = [b for b in final_msg.content if b.type == "tool_use"]
             if not tool_uses:
-                text = "".join(b.text for b in msg.content if b.type == "text").strip()
-                return TurnResult(
-                    assistant_text=text,
+                yield TurnResult(
+                    assistant_text="".join(full_text_parts).strip(),
                     stack_payload=self.stack.to_payload(),
                     submitted_feedback_ids=submitted,
                 )
+                return
 
+            logger.debug(
+                "provider convo=%s tool_round round=%d tools=%s",
+                self.conversation_id,
+                round_idx,
+                [tu.name for tu in tool_uses],
+            )
             tool_results: list[dict[str, Any]] = []
             for tu in tool_uses:
                 try:
-                    result, fb_id = await self.handle_tool(session, tu.name, cast(dict[str, Any], tu.input))
+                    result, fb_id = await self.handle_tool(
+                        session, tu.name, cast(dict[str, Any], tu.input)
+                    )
                     if fb_id:
                         submitted.append(fb_id)
                 except Exception as e:  # surface to the model so it can recover
@@ -425,7 +475,7 @@ class ProviderConversation:
             self.history.append({"role": "user", "content": tool_results})
 
         # Tool-call ping-pong didn't terminate; bail.
-        return TurnResult(
+        yield TurnResult(
             assistant_text="(internal: too many tool rounds)",
             stack_payload=self.stack.to_payload(),
             submitted_feedback_ids=submitted,

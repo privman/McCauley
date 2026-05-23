@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "../api";
+import { Markdown } from "../components/Markdown";
+import { useAutoScroll } from "../components/useAutoScroll";
 
 type Msg = { role: "you" | "bot"; text: string };
 type Source = {
@@ -16,44 +18,129 @@ const EXAMPLE_PROMPTS = [
   "What are the top themes in feedback about delivery?",
 ];
 
+const THINKING_DELAY_MS = 750;
+
 export default function MyFeedback() {
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [partial, setPartial] = useState("");
+  const [pending, setPending] = useState(false);
+  const [showThinking, setShowThinking] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [draft, setDraft] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
+  const thinkingTimerRef = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const { ref: scrollRef, stickToBottom } = useAutoScroll<HTMLDivElement>([
+    messages,
+    partial,
+    pending,
+    showThinking,
+  ]);
+
+  function armThinkingTimer() {
+    if (thinkingTimerRef.current !== null) {
+      window.clearTimeout(thinkingTimerRef.current);
+    }
+    setShowThinking(false);
+    thinkingTimerRef.current = window.setTimeout(() => {
+      setShowThinking(true);
+    }, THINKING_DELAY_MS);
+  }
+
+  function clearThinkingTimer() {
+    if (thinkingTimerRef.current !== null) {
+      window.clearTimeout(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
+    setShowThinking(false);
+  }
 
   useEffect(() => {
     const ws = new WebSocket(wsUrl("/ws/recipient"));
+    ws.onopen = () => console.info("[recipient WS] open");
+    ws.onerror = (e) => console.error("[recipient WS] error", e);
+    ws.onclose = (e) => {
+      console.info("[recipient WS] close", e.code, e.reason);
+      wsRef.current = null;
+      // If a request was in-flight, surface the loss rather than spin forever.
+      setPending((wasPending) => {
+        if (wasPending) {
+          clearThinkingTimer();
+          setPartial("");
+          setMessages((m) => [
+            ...m,
+            { role: "bot", text: "(connection lost — refresh to reconnect)" },
+          ]);
+        }
+        return false;
+      });
+    };
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       switch (msg.type) {
+        case "assistant_text_delta":
+          setPartial((p) => p + msg.text);
+          armThinkingTimer();
+          break;
         case "assistant_text":
+          clearThinkingTimer();
+          setPartial("");
+          setPending(false);
           setMessages((m) => [...m, { role: "bot", text: msg.text }]);
           break;
         case "sources":
           setSources(msg.items);
           break;
         case "error":
+          clearThinkingTimer();
+          setPartial("");
+          setPending(false);
           setMessages((m) => [...m, { role: "bot", text: `(error) ${msg.message}` }]);
           break;
       }
     };
     wsRef.current = ws;
-    return () => ws.close();
+    return () => {
+      if (thinkingTimerRef.current !== null) {
+        window.clearTimeout(thinkingTimerRef.current);
+      }
+      // Disarm the close handler before closing — otherwise its async fire
+      // (after StrictMode's cleanup-then-remount) would null out wsRef.current
+      // which by then points to the NEW WebSocket from the remount.
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      ws.close();
+    };
   }, []);
 
   function send(text: string) {
-    if (!text.trim() || !wsRef.current) return;
+    if (!text.trim() || pending) return;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn("[recipient WS] send while not OPEN", ws?.readyState);
+      setMessages((m) => [
+        ...m,
+        { role: "bot", text: "(not connected — refresh the page)" },
+      ]);
+      return;
+    }
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setSources([]);
-    wsRef.current.send(JSON.stringify({ type: "user_text", text }));
+    setPartial("");
+    setPending(true);
+    stickToBottom();
+    armThinkingTimer();
+    ws.send(JSON.stringify({ type: "user_text", text }));
+    // Re-focus so the user can keep typing while the agent responds.
+    inputRef.current?.focus();
   }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-0">
       <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <div className="text-slate-400 text-sm">
               Ask about feedback you have access to. I'll cite the source records.
@@ -62,15 +149,28 @@ export default function MyFeedback() {
           {messages.map((m, i) => (
             <div
               key={i}
-              className={`max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${
+              className={`max-w-[85%] rounded-xl px-3 py-2 ${
                 m.role === "you"
-                  ? "ml-auto bg-emerald-100 text-emerald-900"
+                  ? "ml-auto bg-emerald-100 text-emerald-900 text-sm whitespace-pre-wrap"
                   : "bg-slate-100 text-slate-800"
               }`}
             >
-              {m.text}
+              {m.role === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
             </div>
           ))}
+          {partial && (
+            <div className="max-w-[85%] rounded-xl px-3 py-2 bg-slate-100 text-slate-800">
+              <Markdown>{partial}</Markdown>
+            </div>
+          )}
+          {pending && showThinking && (
+            <div
+              className="text-slate-500 text-xs italic"
+              style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+            >
+              thinking…
+            </div>
+          )}
         </div>
         <div className="border-t border-slate-200">
           {messages.length === 0 && (
@@ -88,23 +188,26 @@ export default function MyFeedback() {
           )}
           <div className="p-3 flex items-center gap-2">
             <input
+              ref={inputRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") send(draft);
+                if (e.key === "Enter" && !pending) send(draft);
               }}
               placeholder="Ask a question…"
               className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
             />
             <button
               onClick={() => send(draft)}
-              className="px-3 py-2 bg-slate-800 text-white rounded text-sm"
+              disabled={pending}
+              className="px-3 py-2 bg-slate-800 text-white rounded text-sm disabled:opacity-50"
             >
               Send
             </button>
             <button
               onClick={() => send("Generate a report on the feedback I have access to in the last 90 days.")}
-              className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700"
+              disabled={pending}
+              className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700 disabled:opacity-50"
             >
               Generate report
             </button>

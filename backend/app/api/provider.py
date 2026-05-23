@@ -19,7 +19,7 @@ from app.auth import _user_id_from_cookie, COOKIE_NAME
 from app.current_user import UserProfile, load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.provider.orchestrator import drop, get_or_create
+from app.provider.orchestrator import TextDelta, TurnResult, drop, get_or_create
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +79,9 @@ async def provider_ws(
     orchestrator = get_or_create(
         convo_id, user_id=user_id, org_id=org_id, current_user=current_user
     )
-    await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
 
     try:
+        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
             raw = await ws.receive_text()
             try:
@@ -94,12 +94,26 @@ async def provider_ws(
                 await ws.send_json({"type": "error", "message": f"unknown type {mtype}"})
                 continue
             user_text = msg.get("text", "")
+            logger.info(
+                "provider convo=%s user=%s user_message chars=%d",
+                convo_id,
+                user_id,
+                len(user_text),
+            )
 
+            result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await _set_pg_user(session, user_id)
-                    result = await orchestrator.step(session, user_text)
+                    async for event in orchestrator.step(session, user_text):
+                        if isinstance(event, TextDelta):
+                            await ws.send_json(
+                                {"type": "assistant_text_delta", "text": event.text}
+                            )
+                        else:
+                            result = event
 
+            assert result is not None  # orchestrator always yields a final TurnResult
             await ws.send_json(
                 {"type": "draft_state", "stack": result.stack_payload}
             )
@@ -107,6 +121,12 @@ async def provider_ws(
                 await ws.send_json({"type": "submitted", "feedback_id": str(fb_id)})
             await ws.send_json(
                 {"type": "assistant_text", "text": result.assistant_text}
+            )
+            logger.info(
+                "provider convo=%s response_complete chars=%d submitted=%d",
+                convo_id,
+                len(result.assistant_text),
+                len(result.submitted_feedback_ids),
             )
     except WebSocketDisconnect:
         # Keep the orchestrator alive in case the client reconnects with the
