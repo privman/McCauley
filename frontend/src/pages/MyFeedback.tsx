@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "../api";
+import { Markdown } from "../components/Markdown";
 import { useAutoScroll } from "../components/useAutoScroll";
 
 type Msg = { role: "you" | "bot"; text: string };
@@ -112,18 +113,18 @@ export default function MyFeedback() {
           {messages.map((m, i) => (
             <div
               key={i}
-              className={`max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${
+              className={`max-w-[85%] rounded-xl px-3 py-2 ${
                 m.role === "you"
-                  ? "ml-auto bg-emerald-100 text-emerald-900"
+                  ? "ml-auto bg-emerald-100 text-emerald-900 text-sm whitespace-pre-wrap"
                   : "bg-slate-100 text-slate-800"
               }`}
             >
-              {m.text}
+              {m.role === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
             </div>
           ))}
           {partial && (
-            <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap bg-slate-100 text-slate-800">
-              {partial}
+            <div className="max-w-[85%] rounded-xl px-3 py-2 bg-slate-100 text-slate-800">
+              <Markdown>{partial}</Markdown>
             </div>
           )}
           {pending && showThinking && (

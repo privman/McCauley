@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "../api";
 import { DraftPane, Stack } from "../components/DraftPane";
+import { Markdown } from "../components/Markdown";
 import { useAutoScroll } from "../components/useAutoScroll";
 import { VoiceSession } from "../voice";
 
@@ -185,18 +186,18 @@ export default function GiveFeedback() {
           {messages.map((m, i) => (
             <div
               key={i}
-              className={`max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${
+              className={`max-w-[80%] rounded-xl px-3 py-2 ${
                 m.role === "you"
-                  ? "ml-auto bg-emerald-100 text-emerald-900"
+                  ? "ml-auto bg-emerald-100 text-emerald-900 text-sm whitespace-pre-wrap"
                   : "bg-slate-100 text-slate-800"
               }`}
             >
-              {m.text}
+              {m.role === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
             </div>
           ))}
           {partial && (
-            <div className="max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap bg-slate-100 text-slate-800">
-              {partial}
+            <div className="max-w-[80%] rounded-xl px-3 py-2 bg-slate-100 text-slate-800">
+              <Markdown>{partial}</Markdown>
             </div>
           )}
           {pending && showThinking && (
