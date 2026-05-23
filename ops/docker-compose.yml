@@ -25,7 +25,9 @@ services:
       POSTGRES_URL: postgresql+asyncpg://mccauley:mccauley@db:5432/mccauley
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/google-credentials.json}
+      # Standard env var the Google client libraries read. Set from the
+      # operator-facing MOUNT_POINT so .env stays clear.
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS_MOUNT_POINT:-/run/secrets/google-credentials.json}
       SESSION_SECRET: ${SESSION_SECRET:-dev-secret}
       SKILLS_DIR: /app/skills
       SEED_DIR: /app/seed
@@ -34,7 +36,9 @@ services:
     volumes:
       - ../skills:/app/skills:ro
       - ../ops/seed:/app/seed:ro
-      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST:-/dev/null}:/run/secrets/google-credentials.json:ro
+      # Bind-mount the host service-account JSON into the container at the
+      # mount point. /dev/null fallback so the stack still boots without GCP creds.
+      - ${GOOGLE_APPLICATION_CREDENTIALS_SOURCE:-/dev/null}:${GOOGLE_APPLICATION_CREDENTIALS_MOUNT_POINT:-/run/secrets/google-credentials.json}:ro
 
   frontend:
     build:

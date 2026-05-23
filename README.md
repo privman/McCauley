@@ -67,9 +67,14 @@ Then open <http://localhost:5173>. You'll see the user-picker login.
 
 - `ANTHROPIC_API_KEY` — Claude API (Sonnet 4.6 + Haiku 4.5).
 - `VOYAGE_API_KEY` — `voyage-3-large` for feedback embeddings.
-- `GOOGLE_APPLICATION_CREDENTIALS_HOST` — absolute path on your host to a GCP service-account
-  JSON. The compose file mounts it into the backend container at
-  `/run/secrets/google-credentials.json`.
+- `GOOGLE_APPLICATION_CREDENTIALS_SOURCE` — absolute path **on your laptop** to a GCP
+  service-account JSON. Needs `roles/speech.client` and `roles/texttospeech.user`. If unset,
+  the compose file mounts `/dev/null` and voice STT/TTS will fail at the Google API call —
+  everything else still runs.
+- `GOOGLE_APPLICATION_CREDENTIALS_MOUNT_POINT` — path **inside the container** where the JSON
+  appears. Compose sets the standard `GOOGLE_APPLICATION_CREDENTIALS` env var (the one Google
+  client libraries read) from this value. Default `/run/secrets/google-credentials.json` is
+  usually fine.
 - `SESSION_SECRET` — random string for signing the local-auth session cookie.
 - `POSTGRES_URL` — already wired by compose; override only if you point at an external DB.
 

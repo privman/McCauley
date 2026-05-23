@@ -12,7 +12,9 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
-    google_application_credentials: str = ""
+    # Note: GCP credentials are read by google-cloud-{speech,texttospeech}
+    # directly from the GOOGLE_APPLICATION_CREDENTIALS env var. We don't
+    # mirror it into the Settings object because nothing in our code uses it.
 
     skills_dir: Path = Path("skills")
     seed_dir: Path = Path("ops/seed")
