@@ -7,6 +7,7 @@ type Msg = { role: "you" | "bot"; text: string };
 
 export default function GiveFeedback() {
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [partial, setPartial] = useState("");
   const [stack, setStack] = useState<Stack | null>(null);
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
@@ -31,7 +32,11 @@ export default function GiveFeedback() {
       case "ready":
         convoIdRef.current = msg.conversation_id as string;
         break;
+      case "assistant_text_delta":
+        setPartial((p) => p + (msg.text as string));
+        break;
       case "assistant_text":
+        setPartial("");
         setMessages((m) => [...m, { role: "bot", text: msg.text as string }]);
         break;
       case "draft_state":
@@ -44,6 +49,7 @@ export default function GiveFeedback() {
         ]);
         break;
       case "error":
+        setPartial("");
         setMessages((m) => [
           ...m,
           { role: "bot", text: `(error) ${msg.message}` },
@@ -56,6 +62,7 @@ export default function GiveFeedback() {
     if (!text.trim()) return;
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
+    setPartial("");
     textWsRef.current?.send(JSON.stringify({ type: "user_text", text }));
   }
 
@@ -135,7 +142,7 @@ export default function GiveFeedback() {
           {messages.map((m, i) => (
             <div
               key={i}
-              className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
+              className={`max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${
                 m.role === "you"
                   ? "ml-auto bg-emerald-100 text-emerald-900"
                   : "bg-slate-100 text-slate-800"
@@ -144,6 +151,11 @@ export default function GiveFeedback() {
               {m.text}
             </div>
           ))}
+          {partial && (
+            <div className="max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap bg-slate-100 text-slate-800">
+              {partial}
+            </div>
+          )}
         </div>
         <div className="border-t border-slate-200 p-3 flex items-center gap-2">
           <input

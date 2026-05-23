@@ -19,7 +19,7 @@ from app.auth import _user_id_from_cookie, COOKIE_NAME
 from app.current_user import UserProfile, load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.provider.orchestrator import drop, get_or_create
+from app.provider.orchestrator import TextDelta, TurnResult, drop, get_or_create
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +95,19 @@ async def provider_ws(
                 continue
             user_text = msg.get("text", "")
 
+            result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await _set_pg_user(session, user_id)
-                    result = await orchestrator.step(session, user_text)
+                    async for event in orchestrator.step(session, user_text):
+                        if isinstance(event, TextDelta):
+                            await ws.send_json(
+                                {"type": "assistant_text_delta", "text": event.text}
+                            )
+                        else:
+                            result = event
 
+            assert result is not None  # orchestrator always yields a final TurnResult
             await ws.send_json(
                 {"type": "draft_state", "stack": result.stack_payload}
             )

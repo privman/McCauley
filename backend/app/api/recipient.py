@@ -18,7 +18,12 @@ from app.auth import COOKIE_NAME, _user_id_from_cookie
 from app.current_user import load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.recipient.orchestrator import drop, get_or_create
+from app.recipient.orchestrator import (
+    RecipientTurnResult,
+    TextDelta,
+    drop,
+    get_or_create,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +77,21 @@ async def recipient_ws(
                 continue
             user_text = msg.get("text", "")
 
+            result: RecipientTurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await session.execute(
                         sql_text(f"SET LOCAL app.current_user_id = '{user_id}'")
                     )
-                    result = await orchestrator.step(session, user_text)
+                    async for event in orchestrator.step(session, user_text):
+                        if isinstance(event, TextDelta):
+                            await ws.send_json(
+                                {"type": "assistant_text_delta", "text": event.text}
+                            )
+                        else:
+                            result = event
 
+            assert result is not None
             if result.sources:
                 await ws.send_json({"type": "sources", "items": result.sources})
             await ws.send_json(

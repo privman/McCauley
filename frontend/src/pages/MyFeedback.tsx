@@ -18,6 +18,7 @@ const EXAMPLE_PROMPTS = [
 
 export default function MyFeedback() {
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [partial, setPartial] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [draft, setDraft] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
@@ -27,13 +28,18 @@ export default function MyFeedback() {
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       switch (msg.type) {
+        case "assistant_text_delta":
+          setPartial((p) => p + msg.text);
+          break;
         case "assistant_text":
+          setPartial("");
           setMessages((m) => [...m, { role: "bot", text: msg.text }]);
           break;
         case "sources":
           setSources(msg.items);
           break;
         case "error":
+          setPartial("");
           setMessages((m) => [...m, { role: "bot", text: `(error) ${msg.message}` }]);
           break;
       }
@@ -47,6 +53,7 @@ export default function MyFeedback() {
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setSources([]);
+    setPartial("");
     wsRef.current.send(JSON.stringify({ type: "user_text", text }));
   }
 
@@ -71,6 +78,11 @@ export default function MyFeedback() {
               {m.text}
             </div>
           ))}
+          {partial && (
+            <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap bg-slate-100 text-slate-800">
+              {partial}
+            </div>
+          )}
         </div>
         <div className="border-t border-slate-200">
           {messages.length === 0 && (
