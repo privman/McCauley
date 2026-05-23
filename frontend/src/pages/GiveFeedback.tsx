@@ -14,6 +14,7 @@ export default function GiveFeedback() {
   const textWsRef = useRef<WebSocket | null>(null);
   const voiceRef = useRef<VoiceSession | null>(null);
   const convoIdRef = useRef<string | null>(null);
+  const voicePressStartRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Text WS for typed turns.
@@ -93,6 +94,34 @@ export default function GiveFeedback() {
     setRecording(false);
   }
 
+  // Voice button supports both gestures:
+  //  - short click  -> toggle on/off (release before HOLD_THRESHOLD_MS)
+  //  - long press   -> record while held, stop on release
+  const HOLD_THRESHOLD_MS = 250;
+  async function voicePressDown() {
+    if (recording) {
+      holdToTalkStop();
+      voicePressStartRef.current = null;
+      return;
+    }
+    voicePressStartRef.current = Date.now();
+    await holdToTalkStart();
+  }
+  function voicePressUp() {
+    if (voicePressStartRef.current === null) return;
+    const elapsed = Date.now() - voicePressStartRef.current;
+    voicePressStartRef.current = null;
+    if (elapsed >= HOLD_THRESHOLD_MS) {
+      holdToTalkStop();
+    }
+  }
+  function voicePressLeave() {
+    if (voicePressStartRef.current !== null && recording) {
+      voicePressStartRef.current = null;
+      holdToTalkStop();
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-0">
       <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
@@ -117,37 +146,41 @@ export default function GiveFeedback() {
           ))}
         </div>
         <div className="border-t border-slate-200 p-3 flex items-center gap-2">
-          <button
-            onMouseDown={holdToTalkStart}
-            onMouseUp={holdToTalkStop}
-            onMouseLeave={recording ? holdToTalkStop : undefined}
-            onTouchStart={holdToTalkStart}
-            onTouchEnd={holdToTalkStop}
-            className={`px-3 py-2 rounded text-sm border ${
-              recording
-                ? "bg-rose-100 border-rose-300 text-rose-700"
-                : "bg-white border-slate-300 text-slate-700"
-            }`}
-            aria-label="Hold to talk"
-            title={voiceReady ? "Hold to talk" : "Hold to start voice session"}
-          >
-            {recording ? "● recording…" : "🎤 hold to talk"}
-          </button>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void send(draft);
             }}
-            placeholder="…or type a message"
+            placeholder="Type a message…"
             className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
           />
-          <button
-            onClick={() => void send(draft)}
-            className="px-3 py-2 bg-slate-800 text-white rounded text-sm"
-          >
-            Send
-          </button>
+          <div className="flex flex-col gap-1.5">
+            <button
+              onMouseDown={voicePressDown}
+              onMouseUp={voicePressUp}
+              onMouseLeave={voicePressLeave}
+              onTouchStart={voicePressDown}
+              onTouchEnd={voicePressUp}
+              className={`w-9 h-9 flex items-center justify-center rounded border text-base ${
+                recording
+                  ? "bg-rose-100 border-rose-300 text-rose-700"
+                  : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+              }`}
+              aria-label={recording ? "Stop recording" : "Voice"}
+              title={recording ? "Stop recording" : "Click to toggle or hold"}
+            >
+              {recording ? "■" : "🎤"}
+            </button>
+            <button
+              onClick={() => void send(draft)}
+              aria-label="Send"
+              title="Send"
+              className="w-9 h-9 flex items-center justify-center bg-slate-800 text-white rounded text-base hover:bg-slate-700"
+            >
+              ↑
+            </button>
+          </div>
         </div>
       </div>
       <aside className="bg-white border border-slate-200 rounded-xl p-4 min-h-0 overflow-y-auto">
