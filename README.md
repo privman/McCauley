@@ -3,8 +3,7 @@
 A conversational AI for soliciting structured (Situation-Behavior-Impact) feedback at work
 and serving it to authorized recipients through chat + reports.
 
-See [`spec.md`](spec.md), [`design.md`](design.md), [`v0.1-scope.md`](v0.1-scope.md), and
-[`cloud-choice.md`](cloud-choice.md) for the full design context.
+See `[design.md](design.md)` for a system architecture overview, an explanation of key design decisions, and list of potential improvements.
 
 ## Layout
 
@@ -44,23 +43,23 @@ The backend container runs Alembic migrations on startup. Once it's up, seed the
 docker compose -f ops/docker-compose.yml exec backend python -m app.seed
 ```
 
-Then open <http://localhost:5173>. You'll see the user-picker login.
+Then open [http://localhost:5173](http://localhost:5173). You'll see the user-picker login.
 
 ## Demo script (the 10-step path from v0.1-scope.md)
 
 1. **Sign in as Sam Rivera** (Senior Engineer, Mobile).
 2. **Provider mode (voice):** click *Give feedback*, hold the mic, give feedback about Priya
-   Singh. The bot collects subject, headline, and two SBI examples; the right pane fills in.
+  Singh. The bot collects subject, headline, and two SBI examples; the right pane fills in.
 3. **Pivot to text** mid-conversation: "Actually, let's talk about the Mobile team for a
-   moment — they've been shipping consistently." A new draft appears in the stack with
+  moment — they've been shipping consistently." A new draft appears in the stack with
    Priya's paused.
 4. **Resume Priya's draft** by clicking it; finalize and submit.
 5. **Submit the Mobile-team feedback anonymously** (toggle anonymity if you like).
 6. **Sign out, sign in as Maya Patel** (Director of Engineering).
 7. **Recipient mode:** click *My feedback*. Ask *"What feedback has come in about my reports
-   this month?"* The sources panel shows the records the closure surfaces.
+  this month?"* The sources panel shows the records the closure surfaces.
 8. **Probe the ACL:** try asking about a sibling org Maya doesn't oversee. The bot reports
-   zero results.
+  zero results.
 9. **Generate a report** with the button.
 10. **Sign in as Priya** to confirm she sees feedback about herself but not her peers.
 
@@ -69,17 +68,17 @@ Then open <http://localhost:5173>. You'll see the user-picker login.
 - `ANTHROPIC_API_KEY` — Claude API (Sonnet 4.6 + Haiku 4.5).
 - `VOYAGE_API_KEY` — `voyage-3-large` for feedback embeddings.
 - `GOOGLE_APPLICATION_CREDENTIALS_SOURCE` — absolute path **on your laptop** to a GCP
-  service-account JSON. Needs `roles/speech.client` and `roles/texttospeech.user`. If unset,
-  the compose file mounts `/dev/null` and voice STT/TTS will fail at the Google API call —
-  everything else still runs.
+service-account JSON. Needs `roles/speech.client` and `roles/texttospeech.user`. If unset,
+the compose file mounts `/dev/null` and voice STT/TTS will fail at the Google API call —
+everything else still runs.
 - `GOOGLE_APPLICATION_CREDENTIALS_MOUNT_POINT` — path **inside the container** where the JSON
-  appears. Compose sets the standard `GOOGLE_APPLICATION_CREDENTIALS` env var (the one Google
-  client libraries read) from this value. Default `/run/secrets/google-credentials.json` is
-  usually fine.
+appears. Compose sets the standard `GOOGLE_APPLICATION_CREDENTIALS` env var (the one Google
+client libraries read) from this value. Default `/run/secrets/google-credentials.json` is
+usually fine.
 - `SESSION_SECRET` — HMAC key for the local-auth session cookie. The default
-  (`change-me-if-running-remotely`) is fine for solo local dev where only seeded synthetic
-  users exist and the port isn't exposed beyond `localhost`; change it before exposing the
-  instance over the network or seeding real users.
+(`change-me-if-running-remotely`) is fine for solo local dev where only seeded synthetic
+users exist and the port isn't exposed beyond `localhost`; change it before exposing the
+instance over the network or seeding real users.
 - `POSTGRES_URL` — already wired by compose; override only if you point at an external DB.
 
 ## Logging
@@ -119,6 +118,6 @@ The two load-bearing checks called out in v0.1-scope.md:
 
 ## What's *not* here
 
-See [`v0.1-scope.md`](v0.1-scope.md) **What's out** for the explicit deferral list — most of
+See `[v0.1-scope.md](v0.1-scope.md)` **What's out** for the explicit deferral list — most of
 v1's enterprise plumbing (OIDC, SCIM, multi-region, observability stack, taxonomy lifecycle,
 provider-injection screening) is intentionally absent.
