@@ -15,6 +15,7 @@ from fastapi import APIRouter, Cookie, Query, WebSocket, WebSocketDisconnect, st
 from sqlalchemy import text as sql_text
 
 from app.auth import COOKIE_NAME, _user_id_from_cookie
+from app.current_user import load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
 from app.recipient.orchestrator import drop, get_or_create
@@ -42,6 +43,7 @@ async def recipient_ws(
             await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         org_id = user.org_id
+        current_user = await load_current_user(session, user.id)
 
         if conversation_id:
             convo_id = uuid.UUID(conversation_id)
@@ -52,7 +54,9 @@ async def recipient_ws(
             await session.refresh(convo)
             convo_id = convo.id
 
-    orchestrator = get_or_create(convo_id, user_id=user_id, org_id=org_id)
+    orchestrator = get_or_create(
+        convo_id, user_id=user_id, org_id=org_id, current_user=current_user
+    )
     await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
 
     try:
