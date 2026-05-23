@@ -324,7 +324,7 @@ class ProviderConversation:
         self.history.append({"role": "user", "content": user_text})
 
         submitted: list[uuid.UUID] = []
-        for _ in range(8):  # safety bound on tool-call rounds per user turn
+        for _ in range(16):  # safety bound on tool-call rounds per user turn
             msg = await sonnet_message(
                 system=self.system_prompt(),
                 messages=self.history,
