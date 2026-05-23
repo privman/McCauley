@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
 from app.llm import sonnet_message
-from app.models import Feedback, FeedbackStatus, SBIInstance, SubjectKind
+from app.models import Feedback, FeedbackStatus, OrgUnit, SBIInstance, SubjectKind, User
 from app.provider.state import DraftStack
 from app.skills import load_skill, skill_index_for_prompt
 from app.submit import finalize_submission
@@ -239,7 +239,17 @@ class ProviderConversation:
             if field_name == "subject":
                 draft.subject_kind = value["kind"]
                 draft.subject_id = uuid.UUID(value["id"])
-                draft.subject_name = value.get("name")
+                # Look the display name up authoritatively from the id the model
+                # passed — the model isn't required to include "name" and even if
+                # it does, the DB is the source of truth.
+                if value["kind"] == "user":
+                    u = await session.get(User, draft.subject_id)
+                    draft.subject_name = u.name if u else value.get("name")
+                elif value["kind"] == "unit":
+                    ou = await session.get(OrgUnit, draft.subject_id)
+                    draft.subject_name = ou.name if ou else value.get("name")
+                else:
+                    draft.subject_name = value.get("name")
             elif field_name == "headline":
                 draft.headline = str(value)
             elif field_name == "is_anonymous":
