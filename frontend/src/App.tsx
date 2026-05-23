@@ -33,8 +33,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="bg-white border-b border-slate-200">
+    <div className="h-screen flex flex-col overflow-hidden">
+      <header className="bg-white border-b border-slate-200 shrink-0">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-6">
           <h1 className="font-semibold text-slate-800">McCauley</h1>
           <nav className="flex gap-4 text-sm">
@@ -55,7 +55,7 @@ export default function App() {
           </div>
         </div>
       </header>
-      <main className="flex-1 max-w-6xl w-full mx-auto p-6">
+      <main className="flex-1 min-h-0 max-w-6xl w-full mx-auto p-6 overflow-hidden">
         <Routes>
           <Route path="/give-feedback" element={<GiveFeedback />} />
           <Route path="/my-feedback" element={<MyFeedback />} />
