@@ -75,7 +75,10 @@ Then open <http://localhost:5173>. You'll see the user-picker login.
   appears. Compose sets the standard `GOOGLE_APPLICATION_CREDENTIALS` env var (the one Google
   client libraries read) from this value. Default `/run/secrets/google-credentials.json` is
   usually fine.
-- `SESSION_SECRET` — random string for signing the local-auth session cookie.
+- `SESSION_SECRET` — HMAC key for the local-auth session cookie. The default
+  (`change-me-if-running-remotely`) is fine for solo local dev where only seeded synthetic
+  users exist and the port isn't exposed beyond `localhost`; change it before exposing the
+  instance over the network or seeding real users.
 - `POSTGRES_URL` — already wired by compose; override only if you point at an external DB.
 
 ## Tests
