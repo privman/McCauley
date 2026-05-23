@@ -24,14 +24,15 @@ You need:
 - A [Voyage AI key](https://www.voyageai.com/) for embeddings.
 - A GCP service-account JSON with the **Speech-to-Text** and **Text-to-Speech** APIs enabled.
 
-Set up env vars and credentials:
+Set up env vars and credentials. Compose reads `.env` from the directory
+containing the compose file, so the env file lives in `ops/`:
 
 ```bash
-cp .env.example .env
-# edit .env:
+cp .env.example ops/.env
+# edit ops/.env:
 #   ANTHROPIC_API_KEY=sk-ant-...
 #   VOYAGE_API_KEY=pa-...
-#   GOOGLE_APPLICATION_CREDENTIALS_HOST=/absolute/path/on/your/host/to/google-credentials.json
+#   GOOGLE_APPLICATION_CREDENTIALS_SOURCE=/absolute/path/on/your/host/to/google-credentials.json
 #   SESSION_SECRET=any-random-string
 
 docker compose -f ops/docker-compose.yml up --build
@@ -80,6 +81,27 @@ Then open <http://localhost:5173>. You'll see the user-picker login.
   users exist and the port isn't exposed beyond `localhost`; change it before exposing the
   instance over the network or seeding real users.
 - `POSTGRES_URL` — already wired by compose; override only if you point at an external DB.
+
+## Logging
+
+The backend uses Python's standard `logging`. App-level loggers (`app.*`)
+emit:
+
+- **INFO** when a user message arrives and when an agent response is
+  complete, in both provider and recipient modes (and voice).
+- **DEBUG** for fine-grained events: each text chunk received from the
+  model, each tool-call round.
+
+Adjust with `LOG_LEVEL` in `ops/.env` (default `INFO`):
+
+```
+LOG_LEVEL=DEBUG     # see every streamed chunk + tool rounds
+LOG_LEVEL=INFO      # default — turn-level only
+LOG_LEVEL=WARNING   # quiet — only problems
+```
+
+Uvicorn's own loggers (request lines, access logs) are independent. To
+change those, pass `--log-level` in `backend/entrypoint.sh`.
 
 ## Tests
 
