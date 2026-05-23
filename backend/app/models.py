@@ -207,9 +207,9 @@ class FeedbackChunk(Base):
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[Any] = mapped_column(Vector(1024))
-    # tsvector for BM25 — populated by trigger; type=Text in ORM since
-    # SQLAlchemy doesn't have a first-class tsvector mapping we need here.
-    tsv: Mapped[str | None] = mapped_column(Text)
+    # tsvector for BM25 is populated by an INSERT/UPDATE trigger from content;
+    # it's intentionally NOT mapped here so SQLAlchemy doesn't try to coerce it
+    # on INSERT. Retrieval queries reference it via raw SQL.
 
 
 class AccessLog(Base):
