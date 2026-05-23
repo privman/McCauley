@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from anthropic.types import MessageParam, ToolParam
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities import resolve as resolve_entity
@@ -237,19 +238,49 @@ class ProviderConversation:
             field_name = args["field"]
             value = args["value"]
             if field_name == "subject":
-                draft.subject_kind = value["kind"]
-                draft.subject_id = uuid.UUID(value["id"])
-                # Look the display name up authoritatively from the id the model
-                # passed — the model isn't required to include "name" and even if
-                # it does, the DB is the source of truth.
+                # SECURITY: resolve_entity is already org-scoped, but
+                # update_draft takes a raw UUID — a prompt-injected turn could
+                # pass an id from a different tenant. Scope the lookup to
+                # self.org_id and refuse the write if it doesn't resolve, so
+                # cross-tenant ids never make it onto draft.subject_id (let
+                # alone get persisted at submit time) and the model can't
+                # learn the name of another tenant's user/unit.
+                subj_id = uuid.UUID(value["id"])
                 if value["kind"] == "user":
-                    u = await session.get(User, draft.subject_id)
-                    draft.subject_name = u.name if u else value.get("name")
+                    u = await session.scalar(
+                        select(User).where(
+                            User.id == subj_id,
+                            User.org_id == self.org_id,
+                        )
+                    )
+                    if u is None:
+                        return {
+                            "ok": False,
+                            "error": "subject user not found in your org — re-resolve and try again",
+                        }, None
+                    draft.subject_kind = "user"
+                    draft.subject_id = u.id
+                    draft.subject_name = u.name
                 elif value["kind"] == "unit":
-                    ou = await session.get(OrgUnit, draft.subject_id)
-                    draft.subject_name = ou.name if ou else value.get("name")
+                    ou = await session.scalar(
+                        select(OrgUnit).where(
+                            OrgUnit.id == subj_id,
+                            OrgUnit.org_id == self.org_id,
+                        )
+                    )
+                    if ou is None:
+                        return {
+                            "ok": False,
+                            "error": "subject unit not found in your org — re-resolve and try again",
+                        }, None
+                    draft.subject_kind = "unit"
+                    draft.subject_id = ou.id
+                    draft.subject_name = ou.name
                 else:
-                    draft.subject_name = value.get("name")
+                    return {
+                        "ok": False,
+                        "error": f"unknown subject kind {value['kind']!r}",
+                    }, None
             elif field_name == "headline":
                 draft.headline = str(value)
             elif field_name == "is_anonymous":
