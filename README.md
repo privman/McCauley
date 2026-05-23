@@ -24,14 +24,15 @@ You need:
 - A [Voyage AI key](https://www.voyageai.com/) for embeddings.
 - A GCP service-account JSON with the **Speech-to-Text** and **Text-to-Speech** APIs enabled.
 
-Set up env vars and credentials:
+Set up env vars and credentials. Compose reads `.env` from the directory
+containing the compose file, so the env file lives in `ops/`:
 
 ```bash
-cp .env.example .env
-# edit .env:
+cp .env.example ops/.env
+# edit ops/.env:
 #   ANTHROPIC_API_KEY=sk-ant-...
 #   VOYAGE_API_KEY=pa-...
-#   GOOGLE_APPLICATION_CREDENTIALS_HOST=/absolute/path/on/your/host/to/google-credentials.json
+#   GOOGLE_APPLICATION_CREDENTIALS_SOURCE=/absolute/path/on/your/host/to/google-credentials.json
 #   SESSION_SECRET=any-random-string
 
 docker compose -f ops/docker-compose.yml up --build
