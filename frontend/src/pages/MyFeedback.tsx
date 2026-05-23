@@ -29,6 +29,7 @@ export default function MyFeedback() {
   const [draft, setDraft] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const thinkingTimerRef = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const { ref: scrollRef, stickToBottom } = useAutoScroll<HTMLDivElement>([
     messages,
     partial,
@@ -90,7 +91,7 @@ export default function MyFeedback() {
   }, []);
 
   function send(text: string) {
-    if (!text.trim() || !wsRef.current) return;
+    if (!text.trim() || pending || !wsRef.current) return;
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setSources([]);
@@ -99,6 +100,8 @@ export default function MyFeedback() {
     stickToBottom();
     armThinkingTimer();
     wsRef.current.send(JSON.stringify({ type: "user_text", text }));
+    // Re-focus so the user can keep typing while the agent responds.
+    inputRef.current?.focus();
   }
 
   return (
@@ -152,23 +155,26 @@ export default function MyFeedback() {
           )}
           <div className="p-3 flex items-center gap-2">
             <input
+              ref={inputRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") send(draft);
+                if (e.key === "Enter" && !pending) send(draft);
               }}
               placeholder="Ask a question…"
               className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
             />
             <button
               onClick={() => send(draft)}
-              className="px-3 py-2 bg-slate-800 text-white rounded text-sm"
+              disabled={pending}
+              className="px-3 py-2 bg-slate-800 text-white rounded text-sm disabled:opacity-50"
             >
               Send
             </button>
             <button
               onClick={() => send("Generate a report on the feedback I have access to in the last 90 days.")}
-              className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700"
+              disabled={pending}
+              className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700 disabled:opacity-50"
             >
               Generate report
             </button>
