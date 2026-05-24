@@ -200,12 +200,24 @@ class TextDelta:
 
 
 @dataclass
+class SourcesUpdate:
+    """Cumulative sources from tool calls so far this turn.
+
+    Yielded after each tool round so the sources panel can fill in as the
+    agent works (e.g. generate_report uses 30 records, those should show
+    up before the model finishes writing prose about them).
+    """
+
+    sources: list[dict[str, Any]]
+
+
+@dataclass
 class RecipientTurnResult:
     assistant_text: str
     sources: list[dict[str, Any]] = field(default_factory=list)
 
 
-StreamEvent = TextDelta | RecipientTurnResult
+StreamEvent = TextDelta | SourcesUpdate | RecipientTurnResult
 
 
 @dataclass
@@ -389,6 +401,12 @@ class RecipientConversation:
                     }
                 )
             self.history.append({"role": "user", "content": tool_results})
+            # Flush the sources panel as soon as this round's tool calls
+            # have produced them — don't wait for the model to finish
+            # writing prose. Cumulative payload so the client can just
+            # replace, no incremental merge logic needed.
+            if all_sources:
+                yield SourcesUpdate(sources=list(all_sources))
 
         yield RecipientTurnResult(
             assistant_text="(internal: too many tool rounds)", sources=all_sources

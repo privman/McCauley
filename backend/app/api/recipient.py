@@ -20,6 +20,7 @@ from app.db import sessionmaker
 from app.models import Conversation, User
 from app.recipient.orchestrator import (
     RecipientTurnResult,
+    SourcesUpdate,
     TextDelta,
     drop,
     get_or_create,
@@ -94,12 +95,17 @@ async def recipient_ws(
                             await ws.send_json(
                                 {"type": "assistant_text_delta", "text": event.text}
                             )
+                        elif isinstance(event, SourcesUpdate):
+                            # Streamed mid-turn so the sources panel fills
+                            # in as tool calls complete, before the model
+                            # finishes writing prose.
+                            await ws.send_json(
+                                {"type": "sources", "items": event.sources}
+                            )
                         else:
                             result = event
 
             assert result is not None
-            if result.sources:
-                await ws.send_json({"type": "sources", "items": result.sources})
             await ws.send_json(
                 {"type": "assistant_text", "text": result.assistant_text}
             )
