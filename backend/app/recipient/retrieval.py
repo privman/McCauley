@@ -54,6 +54,8 @@ async def hybrid_search(
     subject_unit_ids: list[uuid.UUID] | None = None,
     sentiment: str | None = None,
     topic_slugs: list[str] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     limit: int = 8,
 ) -> list[RetrievedFeedback]:
     """Hybrid retrieval over feedback_visible_to_me.
@@ -79,6 +81,12 @@ async def hybrid_search(
     if topic_slugs:
         params["topics"] = topic_slugs
         filter_clauses.append("f.topic_tags && :topics")
+    if date_from is not None:
+        params["date_from"] = date_from
+        filter_clauses.append("f.submitted_at >= :date_from")
+    if date_to is not None:
+        params["date_to"] = date_to
+        filter_clauses.append("f.submitted_at <= :date_to")
     where_extra = " AND " + " AND ".join(filter_clauses) if filter_clauses else ""
 
     # Two ranked candidate sets, fused by RRF.

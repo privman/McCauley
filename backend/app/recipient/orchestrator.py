@@ -12,6 +12,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from anthropic.types import MessageParam, ToolParam
@@ -78,6 +79,27 @@ Rules:
 - For report generation use generate_report — it returns a structured
   template you should fill in.
 """
+
+
+def _parse_iso_datetime(s: str | None, *, end_of_day: bool = False) -> datetime | None:
+    """Parse the agent's date_range bound.
+
+    Accepts a YYYY-MM-DD date or a full ISO timestamp. Naive values are
+    assumed UTC. When the input is date-only AND this is the upper bound,
+    pushes to end-of-day so the range is inclusive of records submitted
+    later in the named day.
+    """
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        if end_of_day and len(s) == 10:  # bare YYYY-MM-DD
+            dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+        dt = dt.replace(tzinfo=UTC)
+    return dt
 
 
 def _tool_defs() -> list[ToolParam]:
@@ -164,6 +186,18 @@ def _tool_defs() -> list[ToolParam]:
                             "type": "array",
                             "items": {"type": "string"},
                         },
+                        "date_range": {
+                            "type": "object",
+                            "description": (
+                                "Inclusive date range. Either bound is optional "
+                                "(omit for open-ended). Use ISO 8601 dates "
+                                "(YYYY-MM-DD) or full timestamps."
+                            ),
+                            "properties": {
+                                "from": {"type": "string"},
+                                "to": {"type": "string"},
+                            },
+                        },
                         "limit": {"type": "integer"},
                     },
                     "required": ["query"],
@@ -185,6 +219,17 @@ def _tool_defs() -> list[ToolParam]:
                         "query": {"type": "string"},
                         "subject_user_ids": {"type": "array", "items": {"type": "string"}},
                         "subject_unit_ids": {"type": "array", "items": {"type": "string"}},
+                        "date_range": {
+                            "type": "object",
+                            "description": (
+                                "Inclusive date range. Either bound is optional. "
+                                "Use ISO 8601 dates (YYYY-MM-DD) or full timestamps."
+                            ),
+                            "properties": {
+                                "from": {"type": "string"},
+                                "to": {"type": "string"},
+                            },
+                        },
                     },
                     "required": ["query"],
                 },
@@ -239,6 +284,9 @@ class RecipientConversation:
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         subj_users = [uuid.UUID(s) for s in args.get("subject_user_ids", []) or []]
         subj_units = [uuid.UUID(s) for s in args.get("subject_unit_ids", []) or []]
+        date_range = args.get("date_range") or {}
+        date_from = _parse_iso_datetime(date_range.get("from"))
+        date_to = _parse_iso_datetime(date_range.get("to"), end_of_day=True)
         results = await hybrid_search(
             session,
             query=args["query"],
@@ -246,6 +294,8 @@ class RecipientConversation:
             subject_unit_ids=subj_units or None,
             sentiment=args.get("sentiment"),
             topic_slugs=args.get("topic_slugs") or None,
+            date_from=date_from,
+            date_to=date_to,
             limit=args.get("limit", 8),
         )
         payload = [

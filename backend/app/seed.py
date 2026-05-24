@@ -17,7 +17,7 @@ import asyncio
 import csv
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select, text
@@ -197,6 +197,10 @@ async def seed() -> None:
             )
             is_anon = row["is_anonymous"].lower() == "true"
             provider = None if is_anon else user_id_by_handle.get(row["provider_user_id"])
+            # `days_ago` spreads the seed feedback across recent history so the
+            # date_range filter is exercise-able in demos. Falls back to "now"
+            # if the column is missing (older CSVs).
+            days_ago = int(row["days_ago"]) if row.get("days_ago") else 0
             fb = Feedback(
                 org_id=org.id,
                 provider_user_id=provider,
@@ -209,7 +213,7 @@ async def seed() -> None:
                 sentiment=Sentiment(row["sentiment"]),
                 sentiment_score=None,
                 status=FeedbackStatus.submitted,
-                submitted_at=datetime.now(UTC),
+                submitted_at=datetime.now(UTC) - timedelta(days=days_ago),
             )
             session.add(fb)
             await session.flush()
