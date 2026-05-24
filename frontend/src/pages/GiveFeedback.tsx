@@ -139,6 +139,9 @@ export default function GiveFeedback() {
       ]);
       return;
     }
+    // Any new user message — typed, button-synthesized, or otherwise —
+    // should kill any in-flight TTS audio from the previous turn.
+    voiceRef.current?.stopPlayback();
     setMessages((m) => [...m, { role: "you", text }]);
     setDraft("");
     setPartial("");
