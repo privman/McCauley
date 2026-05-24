@@ -168,16 +168,29 @@ def _strip_markdown_for_tts(text: str) -> str:
     return text
 
 
-async def synthesize(text: str) -> AsyncIterator[bytes]:
+# Google's TTS speaking_rate defaults to 1.0, which is noticeably slow
+# for a conversational agent. Our user-facing "speed=1.0" maps to 1.2× on
+# Google's scale so the natural pace is brisk; UI multipliers (0.5–2.0)
+# scale from there. Google clamps to [0.25, 4.0]; we mirror.
+TTS_RATE_BASELINE = 1.2
+TTS_RATE_MIN = 0.25
+TTS_RATE_MAX = 4.0
+
+
+async def synthesize(text: str, *, speed: float = 1.0) -> AsyncIterator[bytes]:
     """Synthesize `text` via Google TTS Neural2 and yield the audio bytes.
 
     Strips markdown formatting first — TTS would otherwise pronounce `**`
     as "asterisk asterisk" etc., since chat output is markdown-rendered
     visually but the audio path needs plain prose.
+
+    `speed` is the user-facing multiplier (1.0 = default brisk pace).
+    Multiplied by TTS_RATE_BASELINE before being sent to Google.
     """
     text = _strip_markdown_for_tts(text)
     if not text.strip():
         return
+    speaking_rate = max(TTS_RATE_MIN, min(TTS_RATE_MAX, speed * TTS_RATE_BASELINE))
     from google.cloud import texttospeech  # type: ignore[attr-defined]
 
     def _sync_synth() -> bytes:
@@ -190,6 +203,7 @@ async def synthesize(text: str) -> AsyncIterator[bytes]:
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.LINEAR16,
             sample_rate_hertz=SAMPLE_RATE,
+            speaking_rate=speaking_rate,
         )
         resp = client.synthesize_speech(
             input=synthesis_input, voice=voice, audio_config=audio_config

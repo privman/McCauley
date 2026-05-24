@@ -74,6 +74,7 @@ async def voice_ws(
     )
 
     pcm_buffer = bytearray()
+    tts_speed = 1.0  # user-facing multiplier; synthesize() applies the baseline
     try:
         await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
@@ -94,6 +95,12 @@ async def voice_ws(
             if mtype == "begin":
                 pcm_buffer.clear()
                 continue
+            if mtype == "set_speed":
+                try:
+                    tts_speed = float(payload.get("speed", 1.0))
+                except (TypeError, ValueError):
+                    pass  # ignore bad input; keep the previous value
+                continue
             if mtype != "end":
                 continue
 
@@ -113,7 +120,7 @@ async def voice_ws(
                 )
                 await ws.send_json({"type": "assistant_text", "text": error_msg})
                 try:
-                    async for chunk in synthesize(error_msg):
+                    async for chunk in synthesize(error_msg, speed=tts_speed):
                         await ws.send_bytes(chunk)
                 except Exception:
                     logger.exception("TTS failed during STT-error apology")
@@ -164,7 +171,7 @@ async def voice_ws(
             )
 
             try:
-                async for chunk in synthesize(result.assistant_text):
+                async for chunk in synthesize(result.assistant_text, speed=tts_speed):
                     await ws.send_bytes(chunk)
             except Exception:
                 logger.exception("TTS failed")

@@ -9,6 +9,10 @@ type Msg = { role: "you" | "bot"; text: string };
 
 const THINKING_DELAY_MS = 750;
 
+// User-facing voice playback speeds. 1 is the default brisk pace; the
+// backend multiplies by 1.2 internally to land at Google's `speaking_rate`.
+const VOICE_SPEEDS = [0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
+
 export default function GiveFeedback() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
@@ -18,6 +22,7 @@ export default function GiveFeedback() {
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
   const [voiceReady, setVoiceReady] = useState(false);
+  const [voiceSpeed, setVoiceSpeed] = useState<number>(1);
   const textWsRef = useRef<WebSocket | null>(null);
   const voiceRef = useRef<VoiceSession | null>(null);
   const convoIdRef = useRef<string | null>(null);
@@ -164,8 +169,14 @@ export default function GiveFeedback() {
         setMessages((m) => [...m, { role: "bot", text: `(error) ${msg}` }]),
     });
     await v.connect();
+    v.setSpeed(voiceSpeed);
     voiceRef.current = v;
     return v;
+  }
+
+  function changeVoiceSpeed(speed: number) {
+    setVoiceSpeed(speed);
+    voiceRef.current?.setSpeed(speed);
   }
 
   async function holdToTalkStart() {
@@ -254,6 +265,19 @@ export default function GiveFeedback() {
             className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
           />
           <div className="flex flex-col gap-1.5">
+            <select
+              value={voiceSpeed}
+              onChange={(e) => changeVoiceSpeed(Number(e.target.value))}
+              aria-label="Voice playback speed"
+              title="Voice playback speed"
+              className="w-14 h-7 px-1 border border-slate-300 rounded text-xs text-slate-700 bg-white hover:bg-slate-50"
+            >
+              {VOICE_SPEEDS.map((s) => (
+                <option key={s} value={s}>
+                  {s}×
+                </option>
+              ))}
+            </select>
             <button
               onMouseDown={voicePressDown}
               onMouseUp={voicePressUp}

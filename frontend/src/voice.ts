@@ -105,6 +105,14 @@ export class VoiceSession {
     this.ws?.send(JSON.stringify({ type: "end" }));
   }
 
+  setSpeed(speed: number): void {
+    // No-op if not yet open — the caller (GiveFeedback) re-sends on
+    // connect, so dropping pre-open changes is fine.
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "set_speed", speed }));
+    }
+  }
+
   disconnect(): void {
     try {
       this.ws?.close();
