@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import lru_cache
@@ -140,8 +141,41 @@ async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
     return TranscriptText(text=text)
 
 
+# Strip the markdown markers that the chat renders visually but which TTS
+# would otherwise read literally as "asterisk", "pound", "underscore", etc.
+# Order matters: fenced code blocks first (multi-line), then inline `code`
+# (which uses single backticks so wouldn't survive a global ` strip), then
+# bold (`**`/`__`) before italic so the doubled markers don't get half-eaten.
+_MARKDOWN_STRIP_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"```[\s\S]*?```"), ""),
+    (re.compile(r"`([^`]+)`"), r"\1"),
+    (re.compile(r"\*\*(.+?)\*\*"), r"\1"),
+    (re.compile(r"__(.+?)__"), r"\1"),
+    (re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)"), r"\1"),
+    (re.compile(r"(?<!_)_([^_\n]+)_(?!_)"), r"\1"),
+    (re.compile(r"^#+\s+", re.MULTILINE), ""),
+    (re.compile(r"\[([^\]]+)\]\([^)]+\)"), r"\1"),
+    (re.compile(r"^>\s+", re.MULTILINE), ""),
+    (re.compile(r"^[-*+]\s+", re.MULTILINE), ""),
+    (re.compile(r"^\d+\.\s+", re.MULTILINE), ""),
+]
+
+
+def _strip_markdown_for_tts(text: str) -> str:
+    """Best-effort plain-text version of the agent's chat markdown."""
+    for pattern, replacement in _MARKDOWN_STRIP_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 async def synthesize(text: str) -> AsyncIterator[bytes]:
-    """Synthesize `text` via Google TTS Neural2 and yield the audio bytes."""
+    """Synthesize `text` via Google TTS Neural2 and yield the audio bytes.
+
+    Strips markdown formatting first — TTS would otherwise pronounce `**`
+    as "asterisk asterisk" etc., since chat output is markdown-rendered
+    visually but the audio path needs plain prose.
+    """
+    text = _strip_markdown_for_tts(text)
     if not text.strip():
         return
     from google.cloud import texttospeech  # type: ignore[attr-defined]
