@@ -285,8 +285,12 @@ export default function GiveFeedback() {
       <aside className="bg-white border border-slate-200 rounded-xl p-4 min-h-0 overflow-y-auto">
         <DraftPane
           stack={stack}
+          disabled={pending}
           onPick={(id) =>
             void send(`Let's go back to draft ${id}.`)
+          }
+          onToggleAnonymous={(_id, value) =>
+            void send(`Anonymity turned ${value ? "on" : "off"}.`)
           }
         />
       </aside>

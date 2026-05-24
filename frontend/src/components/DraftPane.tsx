@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, ReactNode } from "react";
 
 type Subject = { kind: string; id: string | null; name: string | null };
 type SBI = {
@@ -21,9 +21,13 @@ export type Stack = { current: Draft | null; paused: Draft[] };
 export function DraftPane({
   stack,
   onPick,
+  onToggleAnonymous,
+  disabled,
 }: {
   stack: Stack | null;
   onPick: (local_id: string) => void;
+  onToggleAnonymous: (local_id: string, value: boolean) => void;
+  disabled?: boolean;
 }) {
   // Hide drafts the user hasn't put any real content into yet — those are
   // just unused workspaces, not real items worth displaying.
@@ -58,7 +62,11 @@ export function DraftPane({
           <h3 className="text-xs uppercase font-medium text-slate-500 mb-2">
             Current draft ({current.local_id})
           </h3>
-          <DraftDetail draft={current} />
+          <DraftDetail
+            draft={current}
+            onToggleAnonymous={onToggleAnonymous}
+            disabled={disabled}
+          />
         </section>
       )}
     </div>
@@ -93,14 +101,30 @@ function DraftRow({
   );
 }
 
-function DraftDetail({ draft }: { draft: Draft }) {
+function DraftDetail({
+  draft,
+  onToggleAnonymous,
+  disabled,
+}: {
+  draft: Draft;
+  onToggleAnonymous: (local_id: string, value: boolean) => void;
+  disabled?: boolean;
+}) {
   return (
     <div className="text-sm space-y-4">
       <KVGrid
         rows={[
           ["Subject", draft.subject?.name ?? "—"],
           ["Point", draft.headline ?? "—"],
-          ["Anonymous", draft.is_anonymous ? "yes" : "no"],
+          [
+            "Anonymous",
+            <AnonymousToggle
+              key="anon"
+              value={draft.is_anonymous}
+              disabled={disabled}
+              onChange={(v) => onToggleAnonymous(draft.local_id, v)}
+            />,
+          ],
         ]}
       />
       <div>
@@ -132,12 +156,12 @@ function KVGrid({
   rows,
   small,
 }: {
-  rows: [string, string][];
+  rows: [string, ReactNode][];
   small?: boolean;
 }) {
   return (
     <dl
-      className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 ${
+      className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center ${
         small ? "text-xs" : ""
       }`}
     >
@@ -148,5 +172,35 @@ function KVGrid({
         </Fragment>
       ))}
     </dl>
+  );
+}
+
+function AnonymousToggle({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      disabled={disabled}
+      onClick={() => onChange(!value)}
+      title={disabled ? "Wait for the agent to finish" : "Toggle anonymity"}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+        value ? "bg-emerald-500" : "bg-slate-300"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+          value ? "translate-x-[18px]" : "translate-x-0.5"
+        }`}
+      />
+    </button>
   );
 }
