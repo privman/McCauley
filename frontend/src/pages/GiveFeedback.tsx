@@ -370,6 +370,8 @@ export default function GiveFeedback() {
           onToggleAnonymous={(_id, value) =>
             void send(`Anonymity turned ${value ? "on" : "off"}.`)
           }
+          onAddExample={() => void send("I'd like to add another example.")}
+          onSubmit={() => void send("Let's submit this feedback record.")}
         />
       </aside>
     </div>

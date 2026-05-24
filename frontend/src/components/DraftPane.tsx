@@ -22,11 +22,15 @@ export function DraftPane({
   stack,
   onPick,
   onToggleAnonymous,
+  onAddExample,
+  onSubmit,
   disabled,
 }: {
   stack: Stack | null;
   onPick: (local_id: string) => void;
   onToggleAnonymous: (local_id: string, value: boolean) => void;
+  onAddExample: (local_id: string) => void;
+  onSubmit: (local_id: string) => void;
   disabled?: boolean;
 }) {
   // Hide drafts the user hasn't put any real content into yet — those are
@@ -65,6 +69,8 @@ export function DraftPane({
           <DraftDetail
             draft={current}
             onToggleAnonymous={onToggleAnonymous}
+            onAddExample={onAddExample}
+            onSubmit={onSubmit}
             disabled={disabled}
           />
         </section>
@@ -104,10 +110,14 @@ function DraftRow({
 function DraftDetail({
   draft,
   onToggleAnonymous,
+  onAddExample,
+  onSubmit,
   disabled,
 }: {
   draft: Draft;
   onToggleAnonymous: (local_id: string, value: boolean) => void;
+  onAddExample: (local_id: string) => void;
+  onSubmit: (local_id: string) => void;
   disabled?: boolean;
 }) {
   return (
@@ -147,6 +157,24 @@ function DraftDetail({
             </li>
           ))}
         </ul>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={() => onAddExample(draft.local_id)}
+          disabled={disabled}
+          className="flex-1 px-3 py-1.5 text-xs rounded border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          + Add example
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(draft.local_id)}
+          disabled={disabled}
+          className="flex-1 px-3 py-1.5 text-xs rounded bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Submit
+        </button>
       </div>
     </div>
   );
