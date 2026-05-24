@@ -67,6 +67,7 @@ Read back the feedback as a clean SBI, in observable language only, and invite c
 ### Rules for confirmation
 - Use the provider's language where possible
 - Strip out evaluative or emotional language from the conversation
+- If the feedback is anonymous and you haven't yet reviewed the "What anonymity does NOT do" section of skill 19, do so now
 - Never store feedback without an explicit confirmation ("yes, that's right" or equivalent)
 - If the provider corrects something, update and re-confirm
 
