@@ -4,6 +4,12 @@ import { Markdown } from "../components/Markdown";
 import { useAutoScroll } from "../components/useAutoScroll";
 
 type Msg = { role: "you" | "bot"; text: string };
+type SBI = {
+  idx: number;
+  situation: string | null;
+  behavior: string | null;
+  impact: string | null;
+};
 type Source = {
   id: string;
   headline: string;
@@ -14,7 +20,7 @@ type Source = {
   provider: string | null;
   is_anonymous: boolean;
   submitted_at: string | null;
-  content: string;
+  sbis: SBI[];
 };
 
 const EXAMPLE_PROMPTS = [
@@ -366,13 +372,37 @@ function SourceDetail({
             ))}
           </div>
         )}
-        <div>
-          <div className="text-xs uppercase font-medium text-slate-500 mb-1">
-            Content
+        <div className="space-y-3">
+          <div className="text-xs uppercase font-medium text-slate-500">
+            Examples
           </div>
-          <div className="whitespace-pre-wrap text-slate-800">
-            {source.content}
-          </div>
+          {source.sbis.length === 0 && (
+            <div className="text-slate-400">none</div>
+          )}
+          {source.sbis.map((s) => (
+            <div
+              key={s.idx}
+              className="border border-slate-200 rounded p-2 space-y-1.5"
+            >
+              <div className="font-medium text-slate-500 text-xs">
+                #{s.idx + 1}
+              </div>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                <dt className="text-slate-500">S</dt>
+                <dd className="text-slate-800 whitespace-pre-wrap break-words">
+                  {s.situation ?? "—"}
+                </dd>
+                <dt className="text-slate-500">B</dt>
+                <dd className="text-slate-800 whitespace-pre-wrap break-words">
+                  {s.behavior ?? "—"}
+                </dd>
+                <dt className="text-slate-500">I</dt>
+                <dd className="text-slate-800 whitespace-pre-wrap break-words">
+                  {s.impact ?? "—"}
+                </dd>
+              </dl>
+            </div>
+          ))}
         </div>
       </div>
     </>

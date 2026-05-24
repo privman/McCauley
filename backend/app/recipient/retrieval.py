@@ -18,6 +18,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +42,7 @@ class RetrievedFeedback:
     submitted_at: datetime | None
     is_anonymous: bool
     provider_name: str | None
-    content: str  # chunk text
+    sbis: list[dict[str, Any]]  # {idx, situation, behavior, impact}, ordered by idx
     score: float
 
 
@@ -119,7 +121,19 @@ async def hybrid_search(
                ou_sub.name AS subject_unit_name,
                v.submitted_at, v.is_anonymous,
                u_prov.name AS provider_name,
-               v.content, f.s AS score
+               COALESCE((
+                   SELECT jsonb_agg(
+                       jsonb_build_object(
+                           'idx', s.idx,
+                           'situation', s.situation,
+                           'behavior', s.behavior,
+                           'impact', s.impact
+                       ) ORDER BY s.idx
+                   )
+                   FROM sbi_instances s
+                   WHERE s.feedback_id = v.id
+               ), '[]'::jsonb) AS sbis,
+               f.s AS score
         FROM fused f
         JOIN visible v ON v.id = f.id
         LEFT JOIN users u_sub ON u_sub.id = v.subject_user_id
@@ -145,7 +159,7 @@ async def hybrid_search(
                 submitted_at=r["submitted_at"],
                 is_anonymous=r["is_anonymous"],
                 provider_name=None if r["is_anonymous"] else r["provider_name"],
-                content=r["content"],
+                sbis=list(r["sbis"] or []),
                 score=float(r["score"]),
             )
         )
