@@ -21,6 +21,7 @@ export default function GiveFeedback() {
   const [stack, setStack] = useState<Stack | null>(null);
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
+  const [voiceStarting, setVoiceStarting] = useState(false);
   const [voiceReady, setVoiceReady] = useState(false);
   const [voiceSpeed, setVoiceSpeed] = useState<number>(1);
   const textWsRef = useRef<WebSocket | null>(null);
@@ -180,9 +181,17 @@ export default function GiveFeedback() {
   }
 
   async function holdToTalkStart() {
-    const v = await ensureVoice();
-    await v.startRecording();
-    setRecording(true);
+    setVoiceStarting(true);
+    try {
+      const v = await ensureVoice();
+      await v.startRecording();
+      setRecording(true);
+    } finally {
+      // Cleared whether startup succeeded or threw — on failure the
+      // button reverts to idle; on success the recording=red state
+      // takes over.
+      setVoiceStarting(false);
+    }
   }
   function holdToTalkStop() {
     voiceRef.current?.stopRecording();
@@ -194,6 +203,9 @@ export default function GiveFeedback() {
   //  - long press   -> record while held, stop on release
   const HOLD_THRESHOLD_MS = 250;
   async function voicePressDown() {
+    // Ignore a second press while we're still spinning up — otherwise
+    // we'd double-start getUserMedia.
+    if (voiceStarting) return;
     if (recording) {
       holdToTalkStop();
       voicePressStartRef.current = null;
@@ -292,12 +304,35 @@ export default function GiveFeedback() {
               className={`w-14 h-7 flex items-center justify-center rounded border text-sm ${
                 recording
                   ? "bg-rose-100 border-rose-300 text-rose-700"
+                  : voiceStarting
+                  ? "bg-slate-50 border-slate-300 text-slate-500"
                   : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
               }`}
-              aria-label={recording ? "Stop recording" : "Voice"}
-              title={recording ? "Stop recording" : "Click to toggle or hold"}
+              aria-label={
+                voiceStarting
+                  ? "Starting mic"
+                  : recording
+                  ? "Stop recording"
+                  : "Voice"
+              }
+              title={
+                voiceStarting
+                  ? "Starting…"
+                  : recording
+                  ? "Stop recording"
+                  : "Click to toggle or hold"
+              }
             >
-              {recording ? "■" : "🎤"}
+              {voiceStarting ? (
+                <span
+                  aria-hidden
+                  className="inline-block w-3.5 h-3.5 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin"
+                />
+              ) : recording ? (
+                "■"
+              ) : (
+                "🎤"
+              )}
             </button>
             <button
               onClick={() => void send(draft)}
