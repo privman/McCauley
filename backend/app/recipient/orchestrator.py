@@ -18,10 +18,16 @@ from anthropic.types import MessageParam, ToolParam
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.current_user import UserProfile
-from app.llm import sonnet_stream
+from app.llm import sonnet_stream, stub_old_tool_results
 from app.recipient.retrieval import hybrid_search
 
 logger = logging.getLogger(__name__)
+
+
+# Keep this many most-recent tool_result payloads intact in history; older
+# search/report results get stubbed each turn to keep input tokens off the
+# Anthropic 30k/min ceiling.
+KEEP_RECENT_TOOL_RESULTS = 4
 
 
 SYSTEM_PROMPT = """\
@@ -211,9 +217,10 @@ class RecipientConversation:
         Yields TextDelta events as the model produces text, then a final
         RecipientTurnResult with the joined text and any sources surfaced.
         """
-        # TODO(#2): compact self.history every N turns. Recipient mode has no
-        # drafts, so only the N-turn trigger applies here.
         self.history.append({"role": "user", "content": user_text})
+        # search_feedback/generate_report payloads are by far the biggest items
+        # in history; stubbing older ones cuts per-turn input tokens hard.
+        stub_old_tool_results(self.history, keep=KEEP_RECENT_TOOL_RESULTS)
         all_sources: list[dict[str, Any]] = []
         full_text_parts: list[str] = []
 

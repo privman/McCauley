@@ -35,13 +35,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.current_user import UserProfile
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
-from app.llm import sonnet_stream
+from app.llm import sonnet_stream, stub_old_tool_results
 from app.models import Feedback, FeedbackStatus, OrgUnit, SBIInstance, SubjectKind, User
 from app.provider.state import DraftStack
 from app.skills import load_skill, skill_index_for_prompt
 from app.submit import finalize_submission
 
 logger = logging.getLogger(__name__)
+
+
+# Keep this many most-recent tool_result payloads intact in history; older
+# ones get stubbed each turn to keep input tokens off the 30k/min ceiling.
+KEEP_RECENT_TOOL_RESULTS = 4
 
 
 SYSTEM_PROMPT = """\
@@ -329,10 +334,14 @@ class ProviderConversation:
 
         if name == "pivot_to_new_draft":
             draft = self.stack.pivot()
+            # Switching drafts: prior retrievals and draft echoes are unlikely
+            # to be useful for the new draft, so stub them all.
+            stub_old_tool_results(self.history, keep=0)
             return {"ok": True, "local_id": draft.local_id}, None
 
         if name == "resume_draft":
             draft = self.stack.resume(args["local_id"])
+            stub_old_tool_results(self.history, keep=0)
             return {"ok": True, "draft": draft.to_payload()}, None
 
         if name == "list_drafts":
@@ -352,6 +361,9 @@ class ProviderConversation:
                 return {"ok": False, "error": why}, None
             fb_id = await self._persist_draft(session, draft)
             self.stack.remove(draft.local_id)
+            # Submission closes a record; the surrounding tool chatter is
+            # no longer useful context for whatever the user does next.
+            stub_old_tool_results(self.history, keep=0)
             return {"ok": True, "feedback_id": str(fb_id)}, fb_id
 
         if name == "load_skill":
@@ -406,11 +418,12 @@ class ProviderConversation:
         if self.stack.current is None:
             self.stack.new_draft()
 
-        # TODO(#2): compact self.history before appending — every N turns and
-        # whenever the user pivots/resumes a draft (history from a different
-        # draft is rarely useful context). Untrimmed history is what's driving
-        # the Anthropic 30k input-tokens/min ceiling during active testing.
         self.history.append({"role": "user", "content": user_text})
+        # Each turn re-sends the entire history; without compaction, search
+        # and update_sbi/draft payloads from earlier turns drive the Anthropic
+        # 30k input-tokens/min ceiling. Pivot/resume/submit do an aggressive
+        # pass (keep=0) inside handle_tool; here we just trim the long tail.
+        stub_old_tool_results(self.history, keep=KEEP_RECENT_TOOL_RESULTS)
 
         submitted: list[uuid.UUID] = []
         full_text_parts: list[str] = []

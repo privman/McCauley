@@ -82,6 +82,42 @@ def sonnet_stream(
     return client().messages.stream(**kwargs)
 
 
+# Stub written in place of older tool_result payloads so history compaction
+# costs only the few bytes of this constant instead of the original (often
+# multi-kilobyte) search/report results.
+_TOOL_RESULT_STUB = json.dumps(
+    {"omitted": True, "note": "earlier tool result removed to fit context"}
+)
+
+
+def stub_old_tool_results(history: list[MessageParam], *, keep: int) -> None:
+    """Replace tool_result content from older turns with a small stub.
+
+    Walks the history in reverse, leaves the most recent `keep` tool_result
+    payloads intact, and overwrites the rest. Search and report results
+    dominate input-token usage; stubbing them cuts per-turn cost dramatically
+    without breaking conversational flow — the model still has its own
+    assistant-text summaries of what it did, just not the raw bytes.
+
+    `keep=0` is the aggressive form: stub everything (use when switching
+    drafts, where prior retrievals are unlikely to be useful again).
+    """
+    seen = 0
+    for msg in reversed(history):
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not (isinstance(block, dict) and block.get("type") == "tool_result"):
+                continue
+            if seen < keep:
+                seen += 1
+            elif block.get("content") != _TOOL_RESULT_STUB:
+                block["content"] = _TOOL_RESULT_STUB
+
+
 async def haiku_classify(
     *,
     system: str,
