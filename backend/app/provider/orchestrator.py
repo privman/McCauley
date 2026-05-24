@@ -95,9 +95,11 @@ def _tool_defs() -> list[ToolParam]:
             {
                 "name": "resolve_entity",
                 "description": (
-                    "Fuzzy-match a person or org-unit name. Returns ranked candidates with "
-                    "hints (title, manager, unit head). If multiple are plausible, you MUST "
-                    "ask a disambiguation question on this same turn before any further write."
+                    "Fuzzy-match a person or org-unit name. Returns ranked candidates as "
+                    "[{id, kind, name, title?, manager?}]. The `id` field IS the canonical "
+                    "UUID — pass it directly to update_draft's subject; never call any other "
+                    "tool to look it up. If multiple candidates are plausible, you MUST ask "
+                    "a disambiguation question on this same turn before any further write."
                 ),
                 "input_schema": {
                     "type": "object",
@@ -114,8 +116,9 @@ def _tool_defs() -> list[ToolParam]:
             {
                 "name": "update_draft",
                 "description": (
-                    "Set a draft-level field. Allowed fields: subject (pass {kind, id}), "
-                    "headline (string), is_anonymous (bool)."
+                    "Set a draft-level field. Allowed fields: subject (pass {kind, id} where "
+                    "id is the UUID returned by resolve_entity), headline (string), "
+                    "is_anonymous (bool)."
                 ),
                 "input_schema": {
                     "type": "object",
