@@ -28,7 +28,7 @@ export default function GiveFeedback() {
   const convoIdRef = useRef<string | null>(null);
   const voicePressStartRef = useRef<number | null>(null);
   const thinkingTimerRef = useRef<number | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const { ref: scrollRef, stickToBottom } = useAutoScroll<HTMLDivElement>([
     messages,
     partial,
@@ -253,16 +253,21 @@ export default function GiveFeedback() {
             </div>
           )}
         </div>
-        <div className="border-t border-slate-200 p-3 flex items-center gap-2">
-          <input
+        <div className="border-t border-slate-200 p-3 flex items-stretch gap-2">
+          <textarea
             ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !pending) void send(draft);
+              // Enter sends; Shift+Enter inserts a newline (standard chat UX).
+              if (e.key === "Enter" && !e.shiftKey && !pending) {
+                e.preventDefault();
+                void send(draft);
+              }
             }}
+            rows={4}
             placeholder="Type a message…"
-            className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
+            className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm resize-none overflow-y-auto"
           />
           <div className="flex flex-col gap-1.5">
             <select
