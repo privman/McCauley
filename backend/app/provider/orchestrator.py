@@ -72,6 +72,10 @@ Rules:
 - The user cannot be the subject of their own feedback. If they try,
   tell them so and ask who the feedback is actually about.
 - Capture in this order: subject -> headline (the point) -> SBI examples.
+- Right after the subject is confirmed (update_draft for subject
+  succeeds), briefly remind the provider who will be able to see this feedback
+  — the recipient and their management chain — before asking about
+  the headline. One sentence; don't make a thing of it.
 - After each SBI is captured, ask if there is another example supporting
   the same point.
 - Submission requires at least one SBI with all three of situation,
@@ -86,6 +90,27 @@ Rules:
 
 {skill_index}
 """
+
+
+def greeting(profile: UserProfile) -> str:
+    """First-message greeting rendered without an LLM call.
+
+    Pushed to the client at WS connect so the user sees something
+    immediately while composing their first message. The model never
+    sees this — it's purely UI. Open-ended (who, not what about) to
+    match the system prompt's subject → headline → SBI capture order.
+    """
+    first_name = profile.name.split()[0] if profile.name else "there"
+    return (
+        f"Hi {first_name}, great to have you here! I'm McCauley — "
+        "I'll help you shape your feedback so it lands clearly and is genuinely useful "
+        "for the recipient.\n\n"
+        "A quick note: your name will be attached to whatever we capture (unless you choose "
+        "to provide it anonymously), so the recipient and their management chain will know "
+        "it's from you. Let me know if you prefer to be anonymous.\n\n"
+        "I'll ask a few questions along the way to help structure things well.\n\n"
+        "What's on your mind — who would you like to share feedback about?"
+    )
 
 
 def _tool_defs() -> list[ToolParam]:

@@ -19,7 +19,13 @@ from app.auth import _user_id_from_cookie, COOKIE_NAME
 from app.current_user import UserProfile, load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.provider.orchestrator import TextDelta, TurnResult, drop, get_or_create
+from app.provider.orchestrator import (
+    TextDelta,
+    TurnResult,
+    drop,
+    get_or_create,
+    greeting,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +86,16 @@ async def provider_ws(
         convo_id, user_id=user_id, org_id=org_id, current_user=current_user
     )
 
+    is_new_conversation = conversation_id is None
+
     try:
         await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
+        if is_new_conversation:
+            # Deterministic greeting — no LLM call, no model history entry.
+            # Just gives the user something to read on connect.
+            await ws.send_json(
+                {"type": "assistant_text", "text": greeting(current_user)}
+            )
         while True:
             raw = await ws.receive_text()
             try:
