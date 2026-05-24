@@ -230,6 +230,10 @@ class RecipientConversation:
                 self.conversation_id,
                 round_idx,
             )
+            # Paragraph break between text from consecutive rounds — see the
+            # provider orchestrator for the same fix; without it, text from
+            # before/after a tool call glues together with no separator.
+            round_text_started = False
             async with sonnet_stream(
                 system=self.system_prompt(),
                 messages=self.history,
@@ -242,6 +246,11 @@ class RecipientConversation:
                         and getattr(event.delta, "type", None) == "text_delta"
                     ):
                         chunk = event.delta.text
+                        if not round_text_started and full_text_parts:
+                            sep = "\n\n"
+                            full_text_parts.append(sep)
+                            yield TextDelta(text=sep)
+                        round_text_started = True
                         full_text_parts.append(chunk)
                         logger.debug(
                             "recipient convo=%s chunk_received chars=%d",

@@ -434,6 +434,12 @@ class ProviderConversation:
                 self.conversation_id,
                 round_idx,
             )
+            # Insert a paragraph break before the FIRST text chunk of any
+            # non-initial round that emits text — otherwise text from a prior
+            # round (e.g. "Got it — setting Omar as the subject.") glues to
+            # text from this round (e.g. "Subject set to Omar Hassan.") with
+            # no separator, producing "...subject.Subject set...".
+            round_text_started = False
             async with sonnet_stream(
                 system=self.system_prompt(),
                 messages=self.history,
@@ -445,6 +451,11 @@ class ProviderConversation:
                         and getattr(event.delta, "type", None) == "text_delta"
                     ):
                         chunk = event.delta.text
+                        if not round_text_started and full_text_parts:
+                            sep = "\n\n"
+                            full_text_parts.append(sep)
+                            yield TextDelta(text=sep)
+                        round_text_started = True
                         full_text_parts.append(chunk)
                         logger.debug(
                             "provider convo=%s chunk_received chars=%d",
