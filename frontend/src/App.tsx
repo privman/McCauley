@@ -42,7 +42,7 @@ export default function App() {
               Give feedback
             </Link>
             <Link to="/my-feedback" className="text-slate-700 hover:text-slate-900">
-              My feedback
+              Review feedback
             </Link>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">

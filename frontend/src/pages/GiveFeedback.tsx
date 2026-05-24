@@ -265,7 +265,7 @@ export default function GiveFeedback() {
                 void send(draft);
               }
             }}
-            rows={4}
+            rows={3}
             placeholder="Type a message…"
             className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm resize-none overflow-y-auto"
           />
@@ -289,7 +289,7 @@ export default function GiveFeedback() {
               onMouseLeave={voicePressLeave}
               onTouchStart={voicePressDown}
               onTouchEnd={voicePressUp}
-              className={`w-9 h-9 flex items-center justify-center rounded border text-base ${
+              className={`w-14 h-7 flex items-center justify-center rounded border text-sm ${
                 recording
                   ? "bg-rose-100 border-rose-300 text-rose-700"
                   : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -304,7 +304,7 @@ export default function GiveFeedback() {
               disabled={pending}
               aria-label="Send"
               title="Send"
-              className="w-9 h-9 flex items-center justify-center bg-slate-800 text-white rounded text-base hover:bg-slate-700 disabled:opacity-50"
+              className="w-14 h-7 flex items-center justify-center bg-slate-800 text-white rounded text-sm hover:bg-slate-700 disabled:opacity-50"
             >
               ↑
             </button>
