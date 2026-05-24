@@ -3,7 +3,7 @@
 A conversational AI for soliciting structured (Situation-Behavior-Impact) feedback at work
 and serving it to authorized recipients through chat + reports.
 
-See `[design.md](design.md)` for a system architecture overview, an explanation of key design decisions, and list of potential improvements.
+See [`design.md`](design.md) for a system architecture overview, an explanation of key design decisions, and list of potential improvements.
 
 ## Layout
 
