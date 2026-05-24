@@ -211,6 +211,12 @@ async def synthesize(text: str, *, speed: float = 1.0) -> AsyncIterator[bytes]:
         return resp.audio_content
 
     audio = await asyncio.to_thread(_sync_synth)
+    # LINEAR16 from Google is a WAV blob — strip the 44-byte RIFF header
+    # so we yield raw PCM only. Otherwise the client interprets the
+    # header bytes as int16 samples and you hear a click at the start of
+    # every synthesis (~1.4ms of garbage at 16kHz).
+    if audio[:4] == b"RIFF":
+        audio = audio[44:]
     # Yield in chunks to play back progressively on the client.
     CHUNK = 8 * 1024
     for i in range(0, len(audio), CHUNK):
