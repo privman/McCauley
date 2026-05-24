@@ -15,8 +15,10 @@ Protocol per turn:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 import uuid
 
 from fastapi import APIRouter, Cookie, Query, WebSocket, WebSocketDisconnect, status
@@ -38,6 +40,13 @@ from app.voice import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ws", tags=["voice"])
+
+# Where it's safe to break the streaming text into a TTS chunk. Matches a
+# sentence-ending punctuation followed by whitespace (or end of buffer).
+_SENTENCE_BOUNDARY_RE = re.compile(r"[.!?][\"')\]]*(?:\s+|$)")
+# Don't flush a chunk smaller than this — a couple of words on their own
+# have weird prosody when synthesized in isolation.
+_MIN_TTS_CHUNK_CHARS = 30
 
 
 @router.websocket("/voice")
@@ -145,19 +154,79 @@ async def voice_ws(
                 len(transcript),
             )
 
+            # Pipeline: orchestrator deltas → text WS frames; the same
+            # text gets buffered into sentence-sized chunks, each handed to
+            # a synthesize() task. A drainer awaits those tasks in order
+            # and ships audio frames as soon as each chunk's synthesis
+            # completes — so TTS starts well before the model finishes
+            # writing.
+            synth_queue: asyncio.Queue[asyncio.Task[list[bytes]] | None] = (
+                asyncio.Queue()
+            )
+
+            async def _synth_chunk(chunk_text: str) -> list[bytes]:
+                out: list[bytes] = []
+                async for audio in synthesize(chunk_text, speed=tts_speed):
+                    out.append(audio)
+                return out
+
+            async def _audio_drainer() -> None:
+                while True:
+                    task = await synth_queue.get()
+                    if task is None:
+                        return
+                    try:
+                        for audio in await task:
+                            await ws.send_bytes(audio)
+                    except Exception:
+                        logger.exception("TTS chunk failed")
+
+            drainer = asyncio.create_task(_audio_drainer())
+            text_buffer = ""
+
+            def _enqueue_sentences(*, flush_remainder: bool) -> None:
+                """Pop completed sentences off text_buffer and dispatch them."""
+                nonlocal text_buffer
+                while True:
+                    match = _SENTENCE_BOUNDARY_RE.search(text_buffer)
+                    if match and match.end() >= _MIN_TTS_CHUNK_CHARS:
+                        chunk_text = text_buffer[: match.end()]
+                        text_buffer = text_buffer[match.end() :]
+                        synth_queue.put_nowait(
+                            asyncio.create_task(_synth_chunk(chunk_text))
+                        )
+                        continue
+                    break
+                if flush_remainder and text_buffer.strip():
+                    synth_queue.put_nowait(
+                        asyncio.create_task(_synth_chunk(text_buffer))
+                    )
+                    text_buffer = ""
+
             result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
                     await session.execute(
                         sql_text(f"SET LOCAL app.current_user_id = '{user_id}'")
                     )
-                    # Voice doesn't stream text to the client — TTS plays at the
-                    # end of the turn — so we drain the generator and only use
-                    # the final TurnResult.
                     async for event in orchestrator.step(session, transcript):
-                        if not isinstance(event, TextDelta):
+                        if isinstance(event, TextDelta):
+                            text_buffer += event.text
+                            await ws.send_json(
+                                {"type": "assistant_text_delta", "text": event.text}
+                            )
+                            _enqueue_sentences(flush_remainder=False)
+                        else:
                             result = event
 
+            # Whatever didn't end on a sentence boundary still needs to be
+            # spoken — flush the tail and signal the drainer to stop after
+            # the queued tasks complete.
+            _enqueue_sentences(flush_remainder=True)
+            synth_queue.put_nowait(None)
+
+            # Finalize the chat bubble before waiting on audio — user sees
+            # the final text immediately while TTS continues to play.
             assert result is not None
             await ws.send_json({"type": "draft_state", "stack": result.stack_payload})
             for fb_id in result.submitted_feedback_ids:
@@ -170,11 +239,7 @@ async def voice_ws(
                 len(result.submitted_feedback_ids),
             )
 
-            try:
-                async for chunk in synthesize(result.assistant_text, speed=tts_speed):
-                    await ws.send_bytes(chunk)
-            except Exception:
-                logger.exception("TTS failed")
+            await drainer
             await ws.send_json({"type": "audio_end"})
     except WebSocketDisconnect:
         pass

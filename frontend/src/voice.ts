@@ -5,6 +5,7 @@ const TARGET_RATE = 16000;
 
 export type VoiceCallbacks = {
   onTranscript?: (text: string) => void;
+  onAssistantTextDelta?: (chunk: string) => void;
   onAssistantText?: (text: string) => void;
   onDraftState?: (stack: unknown) => void;
   onSubmitted?: (feedback_id: string) => void;
@@ -21,6 +22,11 @@ export class VoiceSession {
   private playbackCtx: AudioContext | null = null;
   private playbackQueue: ArrayBuffer[] = [];
   private isPlaying = false;
+  private currentPlaybackSource: AudioBufferSourceNode | null = null;
+  // True between stopPlayback() and the next transcript frame, so that
+  // audio bytes already in flight from the backend (which doesn't know
+  // we interrupted) get dropped instead of played.
+  private suppressIncomingAudio = false;
   private conversationId: string | null = null;
 
   constructor(
@@ -44,7 +50,13 @@ export class VoiceSession {
             this.cb.onReady?.(msg.conversation_id);
             break;
           case "transcript":
+            // New turn begins — accept the backend's next audio batch
+            // again, even if the previous turn's audio was interrupted.
+            this.suppressIncomingAudio = false;
             this.cb.onTranscript?.(msg.text);
+            break;
+          case "assistant_text_delta":
+            this.cb.onAssistantTextDelta?.(msg.text);
             break;
           case "assistant_text":
             this.cb.onAssistantText?.(msg.text);
@@ -63,6 +75,7 @@ export class VoiceSession {
             break;
         }
       } else {
+        if (this.suppressIncomingAudio) return;
         this.playbackQueue.push(ev.data as ArrayBuffer);
         void this.drainPlayback();
       }
@@ -105,6 +118,23 @@ export class VoiceSession {
     this.ws?.send(JSON.stringify({ type: "end" }));
   }
 
+  /** Cancel any in-flight TTS playback and discard pending audio bytes
+   *  until the next turn's transcript arrives. Called when the user
+   *  presses the mic mid-playback — keeps the agent from hearing itself. */
+  stopPlayback(): void {
+    this.suppressIncomingAudio = true;
+    this.playbackQueue.length = 0;
+    if (this.currentPlaybackSource) {
+      try {
+        // .stop() triggers onended, which resolves the awaiter in the
+        // drain loop; loop sees empty queue and exits cleanly.
+        this.currentPlaybackSource.stop();
+      } catch (_) {
+        /* already stopped */
+      }
+    }
+  }
+
   setSpeed(speed: number): void {
     // No-op if not yet open — the caller (GiveFeedback) re-sends on
     // connect, so dropping pre-open changes is fine.
@@ -134,10 +164,12 @@ export class VoiceSession {
       const src = this.playbackCtx.createBufferSource();
       src.buffer = audioBuf;
       src.connect(this.playbackCtx.destination);
+      this.currentPlaybackSource = src;
       await new Promise<void>((resolve) => {
         src.onended = () => resolve();
         src.start();
       });
+      this.currentPlaybackSource = null;
     }
     this.isPlaying = false;
   }

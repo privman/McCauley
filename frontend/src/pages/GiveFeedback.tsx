@@ -161,13 +161,23 @@ export default function GiveFeedback() {
       },
       onTranscript: (t) =>
         setMessages((m) => [...m, { role: "you", text: t || "(silence)" }]),
-      onAssistantText: (t) =>
-        setMessages((m) => [...m, { role: "bot", text: t }]),
+      onAssistantTextDelta: (chunk) => {
+        setPartial((p) => p + chunk);
+        armThinkingTimer();
+      },
+      onAssistantText: (t) => {
+        clearThinkingTimer();
+        setPartial("");
+        setMessages((m) => [...m, { role: "bot", text: t }]);
+      },
       onDraftState: (s) => setStack(s as Stack),
       onSubmitted: (id) =>
         setMessages((m) => [...m, { role: "bot", text: `✓ Submitted feedback ${id}` }]),
-      onError: (msg) =>
-        setMessages((m) => [...m, { role: "bot", text: `(error) ${msg}` }]),
+      onError: (msg) => {
+        clearThinkingTimer();
+        setPartial("");
+        setMessages((m) => [...m, { role: "bot", text: `(error) ${msg}` }]);
+      },
     });
     await v.connect();
     v.setSpeed(voiceSpeed);
@@ -203,6 +213,10 @@ export default function GiveFeedback() {
   //  - long press   -> record while held, stop on release
   const HOLD_THRESHOLD_MS = 250;
   async function voicePressDown() {
+    // Kill any in-flight TTS audio immediately so the agent doesn't
+    // hear itself if the user starts talking before playback finished.
+    // Safe no-op if there's no active VoiceSession yet.
+    voiceRef.current?.stopPlayback();
     // Ignore a second press while we're still spinning up — otherwise
     // we'd double-start getUserMedia.
     if (voiceStarting) return;
