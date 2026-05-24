@@ -30,6 +30,7 @@ class EntityCandidate:
     title: str | None = None
     manager_name: str | None = None
     unit_name: str | None = None
+    head_user_id: uuid.UUID | None = None  # for kind="unit" only
 
 
 SIMILARITY_THRESHOLD = 0.2  # pg_trgm default is 0.3; we widen for short queries
@@ -90,7 +91,8 @@ async def resolve(
             await session.execute(
                 text(
                     """
-                    SELECT ou.id, ou.name, h.name AS head_name,
+                    SELECT ou.id, ou.name, ou.head_user_id,
+                           h.name AS head_name,
                            similarity(ou.name, :q) AS s
                     FROM org_units ou
                     LEFT JOIN users h ON h.id = ou.head_user_id
@@ -115,6 +117,7 @@ async def resolve(
                     kind="unit",
                     name=r.name,
                     title=f"unit (head: {r.head_name})" if r.head_name else "unit",
+                    head_user_id=r.head_user_id,
                 )
             )
 
@@ -130,5 +133,10 @@ def to_tool_payload(candidates: list[EntityCandidate]) -> list[dict[str, str]]:
             item["title"] = c.title
         if c.manager_name:
             item["manager"] = c.manager_name
+        if c.head_user_id:
+            # Lets the agent chain into org_graph(head_user_id, "all_reports")
+            # to get the unit's transitive members — there's no direct
+            # user_unit membership table; membership is implicit via reporting.
+            item["head_user_id"] = str(c.head_user_id)
         out.append(item)
     return out

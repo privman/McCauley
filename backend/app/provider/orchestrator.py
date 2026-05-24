@@ -32,6 +32,7 @@ from anthropic.types import MessageParam, ToolParam
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import org_graph
 from app.current_user import UserProfile
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
@@ -98,6 +99,11 @@ Rules:
 - Always call resolve_entity to look up people or units by name. If it
   returns more than one plausible match, ask the user a disambiguation
   question THIS TURN before any further field write.
+- For self-referential org relations ("my manager", "my direct
+  reports") call org_graph with YOUR own user_id (from the profile
+  block above) and the relevant relation — don't try to resolve
+  these by name. For relations of someone else (e.g. "Priya's
+  manager"), call resolve_entity first to get the id, then org_graph.
 - The user cannot be the subject of their own feedback. If they try,
   tell them so and ask who the feedback is actually about.
 - Capture in this order: subject -> headline (the point) -> SBI examples.
@@ -150,10 +156,11 @@ def _tool_defs() -> list[ToolParam]:
                 "name": "resolve_entity",
                 "description": (
                     "Fuzzy-match a person or org-unit name. Returns ranked candidates as "
-                    "[{id, kind, name, title?, manager?}]. The `id` field IS the canonical "
-                    "UUID — pass it directly to update_draft's subject; never call any other "
-                    "tool to look it up. If multiple candidates are plausible, you MUST ask "
-                    "a disambiguation question on this same turn before any further write."
+                    "[{id, kind, name, title?, manager?, head_user_id?}]. The `id` field "
+                    "IS the canonical UUID — pass it directly to update_draft's subject; "
+                    "never call any other tool to look it up. For units, `head_user_id` "
+                    "is the unit lead. If multiple candidates are plausible, you MUST "
+                    "ask a disambiguation question on this same turn before any further write."
                 ),
                 "input_schema": {
                     "type": "object",
@@ -162,6 +169,34 @@ def _tool_defs() -> list[ToolParam]:
                         "kind": {"type": "string", "enum": ["user", "unit", "any"]},
                     },
                     "required": ["query", "kind"],
+                },
+            },
+        ),
+        cast(
+            ToolParam,
+            {
+                "name": "org_graph",
+                "description": (
+                    "Navigate the org chart from a starting user_id. Returns "
+                    "[{id, name, title}] for related users. Relations: "
+                    "'manager' (direct manager — 0 or 1 row), 'manager_chain' "
+                    "(manager, grandmanager, … ordered closest first), "
+                    "'direct_reports' (users whose manager_id is this one), "
+                    "'all_reports' (transitive subordinates via the closure, "
+                    "excluding self). Use YOUR own user_id from the profile "
+                    "block above for self-referential queries ('my manager', "
+                    "'my reports'); otherwise pass an id from resolve_entity."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "user_id": {"type": "string"},
+                        "relation": {
+                            "type": "string",
+                            "enum": list(org_graph.VALID_RELATIONS),
+                        },
+                    },
+                    "required": ["user_id", "relation"],
                 },
             },
         ),
@@ -325,6 +360,15 @@ class ProviderConversation:
                 session, args["query"], kind=args.get("kind", "any"), org_id=self.org_id
             )
             return {"candidates": entity_payload(cands)}, None
+
+        if name == "org_graph":
+            related = await org_graph.query(
+                session,
+                user_id=uuid.UUID(args["user_id"]),
+                relation=args["relation"],
+                org_id=self.org_id,
+            )
+            return {"users": related, "count": len(related)}, None
 
         if name == "update_draft":
             draft = self.stack.get(args["local_id"]) if self.stack.current else self.stack.new_draft()
