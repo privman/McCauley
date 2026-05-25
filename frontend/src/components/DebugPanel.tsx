@@ -5,9 +5,16 @@ import { useDebug } from "../debug/DebugContext";
 // Always visible (the app is a demo build), but collapsed to a single
 // chip so it doesn't crowd the chat UI.
 export function DebugPanel() {
-  const { networkDown, simulateMicFail, setNetworkDown, setSimulateMicFail } = useDebug();
+  const {
+    networkDown,
+    simulateMicFail,
+    simulateAnthropicOutage,
+    setNetworkDown,
+    setSimulateMicFail,
+    setSimulateAnthropicOutage,
+  } = useDebug();
   const [open, setOpen] = useState(false);
-  const anyActive = networkDown || simulateMicFail;
+  const anyActive = networkDown || simulateMicFail || simulateAnthropicOutage;
 
   return (
     <div className="fixed bottom-3 right-3 z-50">
@@ -35,6 +42,12 @@ export function DebugPanel() {
             description="Next utterance returns an STT error."
             value={simulateMicFail}
             onChange={setSimulateMicFail}
+          />
+          <ToggleRow
+            label="Simulate Anthropic outage"
+            description="LLM calls back off and retry until cleared."
+            value={simulateAnthropicOutage}
+            onChange={setSimulateAnthropicOutage}
           />
         </div>
       ) : (

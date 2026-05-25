@@ -39,7 +39,7 @@ from app import org_graph
 from app.current_user import UserProfile
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
-from app.llm import sonnet_stream, stub_old_tool_results
+from app.llm import SimulatedAnthropicOutage, sonnet_stream, stub_old_tool_results
 from app.models import Feedback, FeedbackStatus, OrgUnit, SBIInstance, SubjectKind, User
 from app.provider.state import DraftStack
 from app.skills import load_skill, skill_index_for_prompt
@@ -460,6 +460,13 @@ class ProviderConversation:
     org_id: uuid.UUID
     current_user: UserProfile
     locale: str = "en-US"
+    # Mutated by the WS receive loop when a `set_outage` frame arrives,
+    # and read by step()'s retry loop. The actual mechanism is just
+    # passing this through sonnet_stream's `simulate_outage` kwarg —
+    # when true, sonnet_stream raises SimulatedAnthropicOutage instead
+    # of contacting Anthropic, exercising the same retry path that
+    # would handle a real anthropic.APIError.
+    simulate_anthropic_outage: bool = False
     stack: DraftStack = field(default_factory=DraftStack)
     history: list[MessageParam] = field(default_factory=list)
 
@@ -688,6 +695,7 @@ class ProviderConversation:
                         system=self.system_prompt(),
                         messages=self.history,
                         tools=_tool_defs(),
+                        simulate_outage=self.simulate_anthropic_outage,
                     ) as stream:
                         async for event in stream:
                             if (
@@ -709,7 +717,7 @@ class ProviderConversation:
                                 yield TextDelta(text=chunk)
                         final_msg = await stream.get_final_message()
                     break  # success — exit retry loop
-                except anthropic.APIError as e:
+                except (SimulatedAnthropicOutage, anthropic.APIError) as e:
                     logger.warning(
                         "provider convo=%s LLM call failed (%s); retrying in %.2fs",
                         self.conversation_id,

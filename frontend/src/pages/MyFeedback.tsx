@@ -39,7 +39,7 @@ const THINKING_DELAY_MS = 750;
 
 export default function MyFeedback() {
   const { locale, t } = useLocale();
-  const { networkDown } = useDebug();
+  const { networkDown, simulateAnthropicOutage, simulateAnthropicOutageRef } = useDebug();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
@@ -47,8 +47,9 @@ export default function MyFeedback() {
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting">(
     "connected",
   );
-  // Set true when the backend emits `api_retry`. Cleared on the next
-  // delta — stream restarting means the LLM call recovered.
+  // Set true when the backend emits `api_retry` (real APIError or
+  // simulated outage). Cleared on the next text delta — stream resuming
+  // means the LLM call recovered.
   const [apiRetrying, setApiRetrying] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -96,9 +97,9 @@ export default function MyFeedback() {
   }
 
   useEffect(() => {
-    // `networkDown` points us at an unbound port so the connection
-    // genuinely fails; the real `onclose` handler drives the indicator.
-    // No special UI state for "intentional disconnect".
+    // Network-down sim → unbound localhost port → real connection
+    // refused → `onclose` fires → existing recovery path drives the
+    // indicator. No special UI state for "intentional disconnect".
     const url = networkDown
       ? "ws://localhost:65535/ws/recipient"
       : wsUrl("/ws/recipient", {
@@ -196,10 +197,26 @@ export default function MyFeedback() {
     setPartial("");
     setPending(true);
     stickToBottom();
-    ws.send(JSON.stringify({ type: "user_text", text, locale }));
+    ws.send(
+      JSON.stringify({
+        type: "user_text",
+        text,
+        locale,
+        simulate_anthropic_outage: simulateAnthropicOutageRef.current,
+      }),
+    );
     // Re-focus so the user can keep typing while the agent responds.
     inputRef.current?.focus();
   }
+
+  // Push the outage toggle state to the backend whenever it flips so a
+  // mid-retry toggle-off lets the in-flight turn recover.
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "set_outage", value: simulateAnthropicOutage }));
+    }
+  }, [simulateAnthropicOutage]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-0">
@@ -254,8 +271,8 @@ export default function MyFeedback() {
               {t("system.connection_retrying")}
             </div>
           )}
-          {/* Driven by the backend's `api_retry` frame from the real
-              retry-on-error path; cleared on the next delta. */}
+          {/* Driven by the backend's `api_retry` frame; the debug toggle
+              reaches the indicator only via the real retry-on-error path. */}
           {apiRetrying && (
             <div
               className="text-slate-500 text-xs italic"

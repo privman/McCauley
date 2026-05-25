@@ -24,7 +24,7 @@ from app import org_graph
 from app.current_user import UserProfile
 from app.entities import resolve as resolve_entity
 from app.entities import to_tool_payload as entity_payload
-from app.llm import sonnet_stream, stub_old_tool_results
+from app.llm import SimulatedAnthropicOutage, sonnet_stream, stub_old_tool_results
 from app.recipient.retrieval import hybrid_search
 
 logger = logging.getLogger(__name__)
@@ -283,10 +283,11 @@ class SourcesUpdate:
 
 @dataclass
 class RetryStatus:
-    """Signaled when an LLM call has failed (e.g. anthropic.APIError) and
-    we're about to back off and retry. Forwarded by the WS handler as
-    an `api_retry` frame so the frontend can render the outage indicator
-    until the stream resumes."""
+    """Signaled when an LLM call has failed and we're about to back off
+    and retry. Forwarded by the WS handler as an `api_retry` frame so
+    the frontend can render the outage indicator. Driven by the actual
+    catch path — a simulated outage raises the same exception type a
+    genuine APIError would."""
 
 
 @dataclass
@@ -305,6 +306,12 @@ class RecipientConversation:
     org_id: uuid.UUID
     current_user: UserProfile
     locale: str = "en-US"
+    # Mutated externally by the WS receive loop processing a debug
+    # `set_outage` frame. When true, the next call to sonnet_stream
+    # raises SimulatedAnthropicOutage — caught by the same retry loop
+    # that handles a real anthropic.APIError, so the simulation
+    # exercises the real error-handling path.
+    simulate_anthropic_outage: bool = False
     history: list[MessageParam] = field(default_factory=list)
 
     def system_prompt(self) -> str:
@@ -432,9 +439,9 @@ class RecipientConversation:
             # before/after a tool call glues together with no separator.
             round_text_started = False
 
-            # Retry-on-APIError loop. Each retry yields RetryStatus so
-            # the WS handler can surface the indicator. Backoff caps at
-            # 2s for responsive recovery.
+            # Retry-on-error loop. SimulatedAnthropicOutage gets caught
+            # here too so the simulation goes through the same recovery
+            # path as a real APIError. Backoff caps at 2s.
             backoff = 0.25
             final_msg = None
             while True:
@@ -444,6 +451,7 @@ class RecipientConversation:
                         messages=self.history,
                         tools=_tool_defs(),
                         max_tokens=2048,
+                        simulate_outage=self.simulate_anthropic_outage,
                     ) as stream:
                         async for event in stream:
                             if (
@@ -465,7 +473,7 @@ class RecipientConversation:
                                 yield TextDelta(text=chunk)
                         final_msg = await stream.get_final_message()
                     break
-                except anthropic.APIError as e:
+                except (SimulatedAnthropicOutage, anthropic.APIError) as e:
                     logger.warning(
                         "recipient convo=%s LLM call failed (%s); retrying in %.2fs",
                         self.conversation_id,

@@ -12,8 +12,9 @@ export type VoiceCallbacks = {
   onReady?: (conversation_id: string) => void;
   onError?: (msg: string) => void;
   // Fired when the backend's retry-on-error path is about to back off
-  // before re-attempting the LLM call. The page uses it to show the
-  // outage indicator until the next delta arrives.
+  // before re-attempting the LLM call (real APIError or simulated
+  // outage — same code path). The page uses it to show the outage
+  // indicator until the next delta arrives.
   onApiRetry?: () => void;
 };
 
@@ -40,6 +41,11 @@ export class VoiceSession {
   // short-circuit transcribe() into a TranscriptError so we exercise
   // the spoken-apology path without an actual STT outage.
   private forceSttFailRef: { readonly current: boolean } | null = null;
+  // Same shape, for the "simulate Anthropic outage" toggle. Read at
+  // `begin` so each utterance starts with the right state; `setOutage`
+  // also pushes set_outage frames so a mid-turn toggle flip reaches
+  // the backend immediately.
+  private simulateOutageRef: { readonly current: boolean } | null = null;
 
   constructor(
     private readonly wsUrl: string,
@@ -51,6 +57,19 @@ export class VoiceSession {
 
   setForceSttFailRef(ref: { readonly current: boolean }): void {
     this.forceSttFailRef = ref;
+  }
+
+  setSimulateOutageRef(ref: { readonly current: boolean }): void {
+    this.simulateOutageRef = ref;
+  }
+
+  /** Push the current outage-toggle state to the backend. The caller
+   *  invokes this each time the debug toggle flips so mid-turn changes
+   *  reach the orchestrator's wait loop. */
+  setOutage(value: boolean): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "set_outage", value }));
+    }
   }
 
   async connect(): Promise<void> {
@@ -111,7 +130,15 @@ export class VoiceSession {
   async startRecording(): Promise<void> {
     if (!this.ws) throw new Error("not connected");
     const force_stt_fail = this.forceSttFailRef?.current === true;
-    this.ws.send(JSON.stringify({ type: "begin", locale: this.locale, force_stt_fail }));
+    const simulate_anthropic_outage = this.simulateOutageRef?.current === true;
+    this.ws.send(
+      JSON.stringify({
+        type: "begin",
+        locale: this.locale,
+        force_stt_fail,
+        simulate_anthropic_outage,
+      }),
+    );
 
     this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     this.audioCtx = new AudioContext();

@@ -23,21 +23,25 @@ const VOICE_SPEEDS = [0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
 
 export default function GiveFeedback() {
   const { locale, t } = useLocale();
-  const { networkDown, simulateMicFailRef } = useDebug();
+  const { networkDown, simulateMicFailRef, simulateAnthropicOutage, simulateAnthropicOutageRef } =
+    useDebug();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
-  // Driven entirely by ws.onopen / ws.onclose. When `networkDown` is on
-  // we point the WS at an unbound port (see below) so the connection
-  // genuinely fails and the same onclose handler fires that would for a
-  // real outage — no special UI state for "intentional disconnect".
+  // "reconnecting" covers both intentional debug-panel disconnect and a
+  // real WS close; the indicator clears when the next WS open succeeds.
+  // Driven entirely by ws.onopen / ws.onclose — the debug toggle
+  // doesn't set it directly. When `networkDown` is on we point the WS
+  // at an unbound port so the connection genuinely fails and the same
+  // onclose handler fires that would for a real outage.
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting">(
     "connected",
   );
-  // Set true when the backend emits `api_retry` (orchestrator hit an
-  // anthropic.APIError and is about to back off). Cleared on the next
-  // text delta — stream restarting means the LLM call recovered.
+  // Set true when the backend emits `api_retry` (i.e. the orchestrator
+  // hit an APIError or the simulated outage and is about to back off
+  // and retry). Cleared on the next text delta — the stream restarting
+  // means the LLM call recovered.
   const [apiRetrying, setApiRetrying] = useState(false);
   const [stack, setStack] = useState<Stack | null>(null);
   const [draft, setDraft] = useState("");
@@ -92,17 +96,17 @@ export default function GiveFeedback() {
     // Text WS for typed turns. The locale query param is consumed by
     // the backend to render the localized greeting frame; per-message
     // locale on user_text frames keeps later turns in sync. Passing
-    // `conversation_id` on reconnect makes the backend resume the same
-    // convo row — so we don't get a duplicate greeting on top of the
-    // existing chat. convoIdRef is populated from the first `ready`
-    // frame and only cleared on a locale change (the stale-greeting
-    // refresh effect below).
+    // `conversation_id` on reconnect (debug-panel network toggle, etc.)
+    // makes the backend resume the same convo row — so we don't get a
+    // duplicate greeting on top of the existing chat. convoIdRef is
+    // populated from the first `ready` frame and only cleared on a
+    // locale change (the stale-greeting refresh effect below).
     //
-    // The debug `networkDown` toggle points us at an unbound localhost
-    // port so the connection genuinely fails — `onclose` fires, the
-    // same recovery path that drives the indicator for a real outage
-    // takes over. The toggle is never read by UI rendering directly;
-    // it only chooses the URL here.
+    // The network-down debug toggle points us at an unbound localhost
+    // port — TCP RST is immediate, the WS fires `onclose`, the same
+    // recovery path that runs for a real outage drives the indicator.
+    // No special UI state for "intentional disconnect" exists; the only
+    // place that toggle is read directly is the debug panel itself.
     if (networkDown) {
       voiceRef.current?.disconnect();
       voiceRef.current = null;
@@ -158,8 +162,8 @@ export default function GiveFeedback() {
         setApiRetrying(true);
         break;
       case "assistant_text_delta":
-        // Stream resuming means the LLM call recovered — clear the
-        // retry indicator on the first delta of the response.
+        // Any text from the model means the LLM call recovered, so
+        // clear the retry indicator on the first delta of the response.
         setApiRetrying(false);
         setPartial((p) => p + (msg.text as string));
         armThinkingTimer();
@@ -249,16 +253,37 @@ export default function GiveFeedback() {
     setPending(true);
     stickToBottom();
     armThinkingTimer();
-    ws.send(JSON.stringify({ type: "user_text", text, locale }));
+    ws.send(
+      JSON.stringify({
+        type: "user_text",
+        text,
+        locale,
+        // Per-turn initial state for the backend orchestrator's
+        // outage-wait loop. The `set_outage` channel (see effect below)
+        // is how mid-turn flips reach the backend; this is just the
+        // starting value.
+        simulate_anthropic_outage: simulateAnthropicOutageRef.current,
+      }),
+    );
     inputRef.current?.focus();
   }
 
+  // Push the outage toggle state to the backend whenever it flips. The
+  // backend orchestrator polls its flag on each backoff tick, so this
+  // is what lets a mid-retry toggle-off recover within ~2 seconds.
+  useEffect(() => {
+    const ws = textWsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "set_outage", value: simulateAnthropicOutage }));
+    }
+    voiceRef.current?.setOutage(simulateAnthropicOutage);
+  }, [simulateAnthropicOutage]);
+
   async function ensureVoice(): Promise<VoiceSession> {
     if (voiceRef.current) return voiceRef.current;
-    // `networkDown` points us at an unbound port so VoiceSession's
-    // connect() promise rejects with a real connection error — same
-    // recovery path as a genuine WS outage. holdToTalkStart catches
-    // that rejection and resets the recording UI.
+    // Network-down sim points us at an unbound port so VoiceSession's
+    // connect promise rejects with a real connection error — same
+    // recovery path as a genuine WS outage.
     const url = networkDown
       ? "ws://localhost:65535/ws/voice"
       : wsUrl("/ws/voice", {
@@ -299,10 +324,11 @@ export default function GiveFeedback() {
       },
       locale,
     );
-    // The voice session reads this ref every time it sends a `begin`
-    // frame, so flipping the toggle between utterances takes effect
+    // The voice session reads these refs every time it sends a `begin`
+    // frame, so flipping the toggles between utterances takes effect
     // immediately without re-creating the session.
     v.setForceSttFailRef(simulateMicFailRef);
+    v.setSimulateOutageRef(simulateAnthropicOutageRef);
     await v.connect();
     v.setSpeed(voiceSpeed);
     voiceRef.current = v;
@@ -328,11 +354,11 @@ export default function GiveFeedback() {
       await v.startRecording();
       setRecording(true);
     } catch (e) {
-      // Voice WS connect failure (simulated network-down points us at
-      // an unbound port → ws.onerror → connect() rejects) or
-      // getUserMedia denial. Either way the button reverts to idle.
-      // The connection-failed indicator in the chat surface already
-      // tells the user why if the WS is the cause.
+      // ensureVoice throws when network is simulated-down (the panel
+      // toggle); the user-visible message was already pushed there.
+      // Any other startup failure (getUserMedia denied, etc.) just
+      // returns the button to idle without surfacing — keeping the
+      // original behavior for that path.
       console.info("[voice] start aborted:", e);
     } finally {
       // Cleared whether startup succeeded or threw — on failure the
@@ -434,9 +460,10 @@ export default function GiveFeedback() {
               {t("system.connection_retrying")}
             </div>
           )}
-          {/* Driven by the backend's `api_retry` frame, which fires inside
-              the real retry-on-error loop. Cleared on the next delta or
-              final text frame when the stream recovers. */}
+          {/* Driven entirely by the backend's `api_retry` frame, which
+              fires inside the real retry-on-error path. The debug toggle
+              causes the indicator only via that path — it's never read
+              here. */}
           {apiRetrying && (
             <div
               className="text-slate-500 text-xs italic"

@@ -36,6 +36,14 @@ def client() -> AsyncAnthropic:
     return _client
 
 
+class SimulatedAnthropicOutage(Exception):
+    """Raised when the debug panel's `simulate_anthropic_outage` flag is set
+    on a call to sonnet_stream / sonnet_message. Caught by the same retry
+    path that handles real anthropic.APIError, so the simulation exercises
+    the actual error-handling code rather than a parallel sim — flipping
+    the toggle off makes the next attempt succeed naturally."""
+
+
 async def sonnet_message(
     *,
     system: str,
@@ -61,6 +69,7 @@ def sonnet_stream(
     messages: list[MessageParam],
     tools: list[ToolParam] | None = None,
     max_tokens: int = 1024,
+    simulate_outage: bool = False,
 ) -> Any:
     """Return the SDK's stream() async context manager pre-configured for Sonnet.
 
@@ -69,7 +78,13 @@ def sonnet_stream(
             async for event in stream:
                 ...
             final = await stream.get_final_message()
+
+    When `simulate_outage` is true, raises SimulatedAnthropicOutage instead
+    of returning a stream. Callers catch it in the same retry-on-APIError
+    path used for genuine upstream failures.
     """
+    if simulate_outage:
+        raise SimulatedAnthropicOutage("debug-panel toggle on; treating as upstream outage")
     settings = get_settings()
     kwargs: dict[str, Any] = {
         "model": settings.sonnet_model,

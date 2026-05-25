@@ -7,9 +7,11 @@ LOCAL app.current_user_id on every turn.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Cookie, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import text as sql_text
@@ -70,30 +72,22 @@ async def recipient_ws(
         locale=locale,
     )
 
-    try:
-        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                await ws.send_json({"type": "error", "message": "invalid json"})
-                continue
-            if msg.get("type") != "user_text":
-                await ws.send_json({"type": "error", "message": "unknown type"})
-                continue
-            msg_locale = msg.get("locale")
-            if isinstance(msg_locale, str):
-                orchestrator.locale = msg_locale
-            user_text = msg.get("text", "")
-            logger.info(
-                "recipient convo=%s user=%s user_message chars=%d",
-                convo_id,
-                user_id,
-                len(user_text),
-            )
+    async def run_turn(msg: dict[str, Any]) -> None:
+        """Process one user_text turn; spawned as a task so the receive
+        loop can keep handling set_outage frames during long retries."""
+        msg_locale = msg.get("locale")
+        if isinstance(msg_locale, str):
+            orchestrator.locale = msg_locale
+        user_text = msg.get("text", "")
+        logger.info(
+            "recipient convo=%s user=%s user_message chars=%d",
+            convo_id,
+            user_id,
+            len(user_text),
+        )
 
-            result: RecipientTurnResult | None = None
+        result: RecipientTurnResult | None = None
+        try:
             async with sessionmaker()() as session:
                 async with session.begin():
                     await session.execute(sql_text(f"SET LOCAL app.current_user_id = '{user_id}'"))
@@ -109,15 +103,56 @@ async def recipient_ws(
                             await ws.send_json({"type": "api_retry"})
                         else:
                             result = event
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("recipient convo=%s turn failed", convo_id)
+            await ws.send_json({"type": "error", "message": "turn failed"})
+            return
 
-            assert result is not None
-            await ws.send_json({"type": "assistant_text", "text": result.assistant_text})
-            logger.info(
-                "recipient convo=%s response_complete chars=%d sources=%d",
-                convo_id,
-                len(result.assistant_text),
-                len(result.sources),
+        assert result is not None
+        await ws.send_json({"type": "assistant_text", "text": result.assistant_text})
+        logger.info(
+            "recipient convo=%s response_complete chars=%d sources=%d",
+            convo_id,
+            len(result.assistant_text),
+            len(result.sources),
+        )
+
+    current_turn: asyncio.Task[None] | None = None
+
+    try:
+        await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await ws.send_json({"type": "error", "message": "invalid json"})
+                continue
+            mtype = msg.get("type")
+
+            if mtype == "set_outage":
+                orchestrator.simulate_anthropic_outage = bool(msg.get("value"))
+                logger.info(
+                    "recipient convo=%s set_outage=%s",
+                    convo_id,
+                    orchestrator.simulate_anthropic_outage,
+                )
+                continue
+
+            if mtype != "user_text":
+                await ws.send_json({"type": "error", "message": "unknown type"})
+                continue
+
+            if current_turn is not None and not current_turn.done():
+                logger.warning("recipient convo=%s user_text while turn in flight", convo_id)
+                continue
+
+            orchestrator.simulate_anthropic_outage = bool(
+                msg.get("simulate_anthropic_outage", False)
             )
+            current_turn = asyncio.create_task(run_turn(msg))
     except WebSocketDisconnect:
         logger.info("recipient WS disconnected for convo %s", convo_id)
     except Exception:
@@ -127,3 +162,6 @@ async def recipient_ws(
             await ws.close()
         except RuntimeError:
             pass
+    finally:
+        if current_turn is not None and not current_turn.done():
+            current_turn.cancel()

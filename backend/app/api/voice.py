@@ -137,6 +137,15 @@ async def voice_ws(
                     current_locale = begin_locale
                     orchestrator.locale = begin_locale
                 force_stt_fail = bool(payload.get("force_stt_fail"))
+                # Same shape as the text WSs: outage state captured per
+                # utterance, then refreshable via set_outage frames the
+                # client sends when the debug toggle flips mid-turn.
+                orchestrator.simulate_anthropic_outage = bool(
+                    payload.get("simulate_anthropic_outage", False)
+                )
+                continue
+            if mtype == "set_outage":
+                orchestrator.simulate_anthropic_outage = bool(payload.get("value"))
                 continue
             if mtype == "set_speed":
                 try:
