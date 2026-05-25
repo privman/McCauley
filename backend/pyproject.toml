@@ -56,7 +56,14 @@ disallow_untyped_decorators = false
 # Third-party libraries without published type stubs. Suppressing the
 # import-related noise lets `strict = true` flag real issues in our own code.
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "voyageai", "voyageai.*", "frontmatter", "google.*"]
+module = [
+    "pgvector.*",
+    "voyageai",
+    "voyageai.*",
+    "frontmatter",
+    "google.*",
+    "testcontainers.*",
+]
 ignore_missing_imports = true
 follow_imports = "skip"
 
