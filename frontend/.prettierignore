@@ -1,0 +1,5 @@
+dist/
+build/
+.vite/
+*.lock
+package-lock.json

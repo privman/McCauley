@@ -275,9 +275,7 @@ class RecipientConversation:
     history: list[MessageParam] = field(default_factory=list)
 
     def system_prompt(self) -> str:
-        return SYSTEM_PROMPT.format(
-            current_user_block=self.current_user.prompt_block()
-        )
+        return SYSTEM_PROMPT.format(current_user_block=self.current_user.prompt_block())
 
     async def _do_search(
         self, session: AsyncSession, args: dict[str, Any]
@@ -352,9 +350,7 @@ class RecipientConversation:
             return await self._do_search(session, args)
         if name == "generate_report":
             # Retrieve broadly, then hand the model a template to fill.
-            search_result, sources = await self._do_search(
-                session, {**args, "limit": 30}
-            )
+            search_result, sources = await self._do_search(session, {**args, "limit": 30})
             return {
                 "results": search_result["results"],
                 "template": (
@@ -366,9 +362,7 @@ class RecipientConversation:
             }, sources
         return {"error": f"unknown tool {name}"}, []
 
-    async def step(
-        self, session: AsyncSession, user_text: str
-    ) -> AsyncIterator[StreamEvent]:
+    async def step(self, session: AsyncSession, user_text: str) -> AsyncIterator[StreamEvent]:
         """Process one user turn as a stream.
 
         Yields TextDelta events as the model produces text, then a final
@@ -451,7 +445,7 @@ class RecipientConversation:
                         "content": json.dumps(result),
                     }
                 )
-            self.history.append({"role": "user", "content": tool_results})
+            self.history.append(cast(MessageParam, {"role": "user", "content": tool_results}))
             # Flush the sources panel as soon as this round's tool calls
             # have produced them — don't wait for the model to finish
             # writing prose. Cumulative payload so the client can just

@@ -121,12 +121,9 @@ async def voice_ws(
                 # STT itself failed — speak a user-facing apology so the
                 # user knows to try again. The orchestrator never runs.
                 error_msg = (
-                    "I'm having trouble hearing you right now — "
-                    "mind trying again in a moment?"
+                    "I'm having trouble hearing you right now — " "mind trying again in a moment?"
                 )
-                await ws.send_json(
-                    {"type": "transcript", "text": "", "error": "stt_failed"}
-                )
+                await ws.send_json({"type": "transcript", "text": "", "error": "stt_failed"})
                 await ws.send_json({"type": "assistant_text", "text": error_msg})
                 try:
                     async for chunk in synthesize(error_msg, speed=tts_speed):
@@ -160,19 +157,23 @@ async def voice_ws(
             # and ships audio frames as soon as each chunk's synthesis
             # completes — so TTS starts well before the model finishes
             # writing.
-            synth_queue: asyncio.Queue[asyncio.Task[list[bytes]] | None] = (
-                asyncio.Queue()
-            )
+            synth_queue: asyncio.Queue[asyncio.Task[list[bytes]] | None] = asyncio.Queue()
 
+            # B023 noqas: these helpers close over `tts_speed` and
+            # `synth_queue` from the enclosing `while True` WS receive loop.
+            # The capture is safe because the helpers are defined and
+            # consumed within a single iteration of that loop — there's no
+            # way for a later iteration's binding to leak into them. Ruff
+            # can't see the per-iteration scope so it flags the pattern.
             async def _synth_chunk(chunk_text: str) -> list[bytes]:
                 out: list[bytes] = []
-                async for audio in synthesize(chunk_text, speed=tts_speed):
+                async for audio in synthesize(chunk_text, speed=tts_speed):  # noqa: B023
                     out.append(audio)
                 return out
 
             async def _audio_drainer() -> None:
                 while True:
-                    task = await synth_queue.get()
+                    task = await synth_queue.get()  # noqa: B023
                     if task is None:
                         return
                     try:
@@ -192,13 +193,13 @@ async def voice_ws(
                     if match and match.end() >= _MIN_TTS_CHUNK_CHARS:
                         chunk_text = text_buffer[: match.end()]
                         text_buffer = text_buffer[match.end() :]
-                        synth_queue.put_nowait(
+                        synth_queue.put_nowait(  # noqa: B023
                             asyncio.create_task(_synth_chunk(chunk_text))
                         )
                         continue
                     break
                 if flush_remainder and text_buffer.strip():
-                    synth_queue.put_nowait(
+                    synth_queue.put_nowait(  # noqa: B023
                         asyncio.create_task(_synth_chunk(text_buffer))
                     )
                     text_buffer = ""
@@ -206,15 +207,11 @@ async def voice_ws(
             result: TurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
-                    await session.execute(
-                        sql_text(f"SET LOCAL app.current_user_id = '{user_id}'")
-                    )
+                    await session.execute(sql_text(f"SET LOCAL app.current_user_id = '{user_id}'"))
                     async for event in orchestrator.step(session, transcript):
                         if isinstance(event, TextDelta):
                             text_buffer += event.text
-                            await ws.send_json(
-                                {"type": "assistant_text_delta", "text": event.text}
-                            )
+                            await ws.send_json({"type": "assistant_text_delta", "text": event.text})
                             _enqueue_sentences(flush_remainder=False)
                         else:
                             result = event

@@ -54,8 +54,7 @@ async def resolve(
     if kind in ("user", "any"):
         rows = (
             await session.execute(
-                text(
-                    """
+                text("""
                     SELECT u.id, u.name, u.title, m.name AS manager_name,
                            similarity(u.name, :q) AS s
                     FROM users u
@@ -65,8 +64,7 @@ async def resolve(
                       AND similarity(u.name, :q) >= :threshold
                     ORDER BY s DESC
                     LIMIT :limit
-                    """
-                ),
+                    """),
                 {
                     "q": query,
                     "org": org_id,
@@ -89,8 +87,7 @@ async def resolve(
     if kind in ("unit", "any"):
         rows = (
             await session.execute(
-                text(
-                    """
+                text("""
                     SELECT ou.id, ou.name, ou.head_user_id,
                            h.name AS head_name,
                            similarity(ou.name, :q) AS s
@@ -100,8 +97,7 @@ async def resolve(
                       AND similarity(ou.name, :q) >= :threshold
                     ORDER BY s DESC
                     LIMIT :limit
-                    """
-                ),
+                    """),
                 {
                     "q": query,
                     "org": org_id,

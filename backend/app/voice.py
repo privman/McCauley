@@ -69,7 +69,7 @@ def _gcp_project_id() -> str:
             data = json.load(f)
         pid = data.get("project_id")
         if pid:
-            return pid
+            return str(pid)
     raise RuntimeError(
         "Cannot determine GCP project id. Set GOOGLE_CLOUD_PROJECT or "
         "ensure the service-account JSON at GOOGLE_APPLICATION_CREDENTIALS "
@@ -93,7 +93,7 @@ async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
     if not audio_bytes:
         return TranscriptSilence()
     from google.api_core.client_options import ClientOptions
-    from google.cloud.speech_v2 import SpeechClient, types  # type: ignore[attr-defined]
+    from google.cloud.speech_v2 import SpeechClient, types
 
     project = _gcp_project_id()
     recognizer = f"projects/{project}/locations/{STT_LOCATION}/recognizers/_"
@@ -102,9 +102,7 @@ async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
         # Regional recognizers require a regional endpoint; the default
         # speech.googleapis.com routes only to `global`.
         client = SpeechClient(
-            client_options=ClientOptions(
-                api_endpoint=f"{STT_LOCATION}-speech.googleapis.com"
-            )
+            client_options=ClientOptions(api_endpoint=f"{STT_LOCATION}-speech.googleapis.com")
         )
         config = types.RecognitionConfig(
             explicit_decoding_config=types.ExplicitDecodingConfig(
@@ -126,9 +124,7 @@ async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
         resp = client.recognize(request=request)
         if not resp.results:
             return ""
-        return " ".join(
-            r.alternatives[0].transcript for r in resp.results if r.alternatives
-        )
+        return " ".join(r.alternatives[0].transcript for r in resp.results if r.alternatives)
 
     try:
         text = await asyncio.to_thread(_sync_recognize)
@@ -191,7 +187,7 @@ async def synthesize(text: str, *, speed: float = 1.0) -> AsyncIterator[bytes]:
     if not text.strip():
         return
     speaking_rate = max(TTS_RATE_MIN, min(TTS_RATE_MAX, speed * TTS_RATE_BASELINE))
-    from google.cloud import texttospeech  # type: ignore[attr-defined]
+    from google.cloud import texttospeech
 
     def _sync_synth() -> bytes:
         client = texttospeech.TextToSpeechClient()
@@ -208,7 +204,7 @@ async def synthesize(text: str, *, speed: float = 1.0) -> AsyncIterator[bytes]:
         resp = client.synthesize_speech(
             input=synthesis_input, voice=voice, audio_config=audio_config
         )
-        return resp.audio_content
+        return bytes(resp.audio_content)
 
     audio = await asyncio.to_thread(_sync_synth)
     # LINEAR16 from Google is a WAV blob — strip the 44-byte RIFF header

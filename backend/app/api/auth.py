@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel
@@ -30,7 +29,9 @@ class LoginRequest(BaseModel):
 @router.get("/users", response_model=list[UserSummary])
 async def list_users(session: SessionDep) -> list[UserSummary]:
     """Lists all seeded users so the frontend can render the picker."""
-    rows = (await session.execute(select(User).where(User.active).order_by(User.name))).scalars().all()
+    rows = (
+        (await session.execute(select(User).where(User.active).order_by(User.name))).scalars().all()
+    )
     return [UserSummary(id=u.id, name=u.name, email=u.email, title=u.title) for u in rows]
 
 

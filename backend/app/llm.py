@@ -52,7 +52,7 @@ async def sonnet_message(
     }
     if tools:
         kwargs["tools"] = tools
-    return await client().messages.create(**kwargs)
+    return cast(Message, await client().messages.create(**kwargs))
 
 
 def sonnet_stream(

@@ -120,10 +120,7 @@ export default function GiveFeedback() {
         clearThinkingTimer();
         setPartial("");
         setPending(false);
-        setMessages((m) => [
-          ...m,
-          { role: "bot", text: `(error) ${msg.message}` },
-        ]);
+        setMessages((m) => [...m, { role: "bot", text: `(error) ${msg.message}` }]);
         break;
     }
   }
@@ -133,10 +130,7 @@ export default function GiveFeedback() {
     const ws = textWsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.warn("[provider WS] send while not OPEN", ws?.readyState);
-      setMessages((m) => [
-        ...m,
-        { role: "bot", text: "(not connected — refresh the page)" },
-      ]);
+      setMessages((m) => [...m, { role: "bot", text: "(not connected — refresh the page)" }]);
       return;
     }
     // Any new user message — typed, button-synthesized, or otherwise —
@@ -155,15 +149,13 @@ export default function GiveFeedback() {
   async function ensureVoice(): Promise<VoiceSession> {
     if (voiceRef.current) return voiceRef.current;
     const url =
-      wsUrl("/ws/voice") +
-      (convoIdRef.current ? `?conversation_id=${convoIdRef.current}` : "");
+      wsUrl("/ws/voice") + (convoIdRef.current ? `?conversation_id=${convoIdRef.current}` : "");
     const v = new VoiceSession(url, {
       onReady: (id) => {
         convoIdRef.current = id;
         setVoiceReady(true);
       },
-      onTranscript: (t) =>
-        setMessages((m) => [...m, { role: "you", text: t || "(silence)" }]),
+      onTranscript: (t) => setMessages((m) => [...m, { role: "you", text: t || "(silence)" }]),
       onAssistantTextDelta: (chunk) => {
         setPartial((p) => p + chunk);
         armThinkingTimer();
@@ -252,8 +244,8 @@ export default function GiveFeedback() {
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <div className="text-slate-400 text-sm">
-              Hi! Tell me about feedback you'd like to share. You can talk
-              (hold the mic) or type below.
+              Hi! Tell me about feedback you'd like to share. You can talk (hold the mic) or type
+              below.
             </div>
           )}
           {messages.map((m, i) => (
@@ -322,22 +314,16 @@ export default function GiveFeedback() {
                 recording
                   ? "bg-rose-100 border-rose-300 text-rose-700"
                   : voiceStarting
-                  ? "bg-slate-50 border-slate-300 text-slate-500"
-                  : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                    ? "bg-slate-50 border-slate-300 text-slate-500"
+                    : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
               }`}
-              aria-label={
-                voiceStarting
-                  ? "Starting mic"
-                  : recording
-                  ? "Stop recording"
-                  : "Voice"
-              }
+              aria-label={voiceStarting ? "Starting mic" : recording ? "Stop recording" : "Voice"}
               title={
                 voiceStarting
                   ? "Starting…"
                   : recording
-                  ? "Stop recording"
-                  : "Click to toggle or hold"
+                    ? "Stop recording"
+                    : "Click to toggle or hold"
               }
             >
               {voiceStarting ? (
@@ -367,12 +353,8 @@ export default function GiveFeedback() {
         <DraftPane
           stack={stack}
           disabled={pending}
-          onPick={(id) =>
-            void send(`Let's go back to draft ${id}.`)
-          }
-          onToggleAnonymous={(_id, value) =>
-            void send(`Anonymity turned ${value ? "on" : "off"}.`)
-          }
+          onPick={(id) => void send(`Let's go back to draft ${id}.`)}
+          onToggleAnonymous={(_id, value) => void send(`Anonymity turned ${value ? "on" : "off"}.`)}
           onAddExample={() => void send("I'd like to add another example.")}
           onSubmit={() => void send("Let's submit this feedback record.")}
         />

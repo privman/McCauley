@@ -43,26 +43,21 @@ async def query(
     Returns: list of {id, name, title}.
     """
     if relation not in VALID_RELATIONS:
-        raise ValueError(
-            f"unknown relation {relation!r}; must be one of {list(VALID_RELATIONS)}"
-        )
+        raise ValueError(f"unknown relation {relation!r}; must be one of {list(VALID_RELATIONS)}")
 
     if relation == "manager":
-        sql = text(
-            """
+        sql = text("""
             SELECT m.id, m.name, m.title
             FROM users u
             JOIN users m ON m.id = u.manager_id
             WHERE u.id = :uid AND u.org_id = :org AND m.org_id = :org
-            """
-        )
+            """)
         rows = (await session.execute(sql, {"uid": user_id, "org": org_id})).all()
 
     elif relation == "manager_chain":
         # Recursive CTE walks up via manager_id. Depth cap is defensive —
         # a real org chart shouldn't be > 20 deep, 50 is generous.
-        sql = text(
-            """
+        sql = text("""
             WITH RECURSIVE chain AS (
                 SELECT u.manager_id AS id, 1 AS depth
                 FROM users u
@@ -78,24 +73,20 @@ async def query(
             JOIN users m ON m.id = c.id
             WHERE m.org_id = :org
             ORDER BY c.depth
-            """
-        )
+            """)
         rows = (await session.execute(sql, {"uid": user_id, "org": org_id})).all()
 
     elif relation == "direct_reports":
-        sql = text(
-            """
+        sql = text("""
             SELECT id, name, title
             FROM users
             WHERE manager_id = :uid AND org_id = :org AND active
             ORDER BY name
-            """
-        )
+            """)
         rows = (await session.execute(sql, {"uid": user_id, "org": org_id})).all()
 
     else:  # all_reports
-        sql = text(
-            """
+        sql = text("""
             SELECT u.id, u.name, u.title
             FROM org_subordinates s
             JOIN users u ON u.id = s.descendant_user_id
@@ -104,8 +95,7 @@ async def query(
               AND u.active
               AND s.descendant_user_id != :uid
             ORDER BY u.name
-            """
-        )
+            """)
         rows = (await session.execute(sql, {"uid": user_id, "org": org_id})).all()
 
     return [{"id": str(r.id), "name": r.name, "title": r.title} for r in rows]

@@ -34,9 +34,7 @@ class SubmitError(Exception):
 def chunk_content(headline: str, sbis: list[tuple[str | None, str | None, str | None]]) -> str:
     parts = [headline]
     for s, b, i in sbis[:5]:
-        parts.append(
-            f"Situation: {s or ''}\nBehavior: {b or ''}\nImpact: {i or ''}".strip()
-        )
+        parts.append(f"Situation: {s or ''}\nBehavior: {b or ''}\nImpact: {i or ''}".strip())
     return "\n\n".join(parts)
 
 
@@ -45,7 +43,7 @@ async def embed(text_in: str) -> list[float]:
     if not settings.voyage_api_key:
         logger.warning("VOYAGE_API_KEY not set — using zero embedding")
         return [0.0] * 1024
-    import voyageai  # type: ignore[import-untyped]
+    import voyageai
 
     voyage = voyageai.Client(api_key=settings.voyage_api_key)
     result = await asyncio.to_thread(
@@ -62,17 +60,23 @@ async def extract_sentiment_and_topic(
 ) -> tuple[Sentiment, list[str]]:
     """One Haiku call returning {sentiment, topics: [slug, ...]}."""
     if not get_settings().anthropic_api_key:
-        logger.warning("ANTHROPIC_API_KEY not set — defaulting sentiment to constructive, no topics")
+        logger.warning(
+            "ANTHROPIC_API_KEY not set — defaulting sentiment to constructive, no topics"
+        )
         return Sentiment.constructive, []
 
     # Fetch active taxonomy slugs for this org.
     slugs = (
-        await session.execute(
-            select(TopicTaxonomy.slug).where(
-                TopicTaxonomy.org_id == org_id, TopicTaxonomy.active.is_(True)
+        (
+            await session.execute(
+                select(TopicTaxonomy.slug).where(
+                    TopicTaxonomy.org_id == org_id, TopicTaxonomy.active.is_(True)
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     allowed = ", ".join(sorted(slugs))
 
     body = "\n\n".join(
@@ -104,9 +108,7 @@ async def extract_sentiment_and_topic(
 
 async def finalize_submission(session: AsyncSession, feedback_id: uuid.UUID) -> Feedback:
     """Run the full submit pipeline against a draft feedback row."""
-    fb = (
-        await session.execute(select(Feedback).where(Feedback.id == feedback_id))
-    ).scalar_one()
+    fb = (await session.execute(select(Feedback).where(Feedback.id == feedback_id))).scalar_one()
 
     if not fb.sbis:
         # Lazy-load — relationship() is lazy by default and we're in an async session.
@@ -129,9 +131,7 @@ async def finalize_submission(session: AsyncSession, feedback_id: uuid.UUID) -> 
     content = chunk_content(fb.headline, sbi_tuples)
     embedding = await embed(content)
     existing = (
-        await session.execute(
-            select(FeedbackChunk).where(FeedbackChunk.feedback_id == fb.id)
-        )
+        await session.execute(select(FeedbackChunk).where(FeedbackChunk.feedback_id == fb.id))
     ).scalar_one_or_none()
     if existing is None:
         session.add(FeedbackChunk(feedback_id=fb.id, content=content, embedding=embedding))

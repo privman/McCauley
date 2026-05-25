@@ -84,13 +84,9 @@ def compute_unit_oversight(
 
 async def recompute(session: AsyncSession) -> tuple[int, int]:
     """Full rebuild of both closure tables. Returns (subordinate_rows, oversight_rows)."""
-    user_rows = (
-        await session.execute(select(User.id, User.manager_id))
-    ).all()
+    user_rows = (await session.execute(select(User.id, User.manager_id))).all()
     unit_rows = (
-        await session.execute(
-            select(OrgUnit.id, OrgUnit.parent_unit_id, OrgUnit.head_user_id)
-        )
+        await session.execute(select(OrgUnit.id, OrgUnit.parent_unit_id, OrgUnit.head_user_id))
     ).all()
 
     users = [_UserNode(id=r[0], manager_id=r[1]) for r in user_rows]

@@ -16,9 +16,7 @@ const BOTTOM_THRESHOLD_PX = 24;
  *   - stickToBottom: call to force-stick (e.g. when the user just sent a
  *     message and should see it + the response regardless of prior scroll)
  */
-export function useAutoScroll<T extends HTMLElement>(
-  deps: ReadonlyArray<unknown>,
-) {
+export function useAutoScroll<T extends HTMLElement>(deps: ReadonlyArray<unknown>) {
   const ref = useRef<T | null>(null);
   const shouldStickRef = useRef(true);
 
@@ -26,8 +24,7 @@ export function useAutoScroll<T extends HTMLElement>(
     const el = ref.current;
     if (!el) return;
     const onScroll = () => {
-      const distanceFromBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       shouldStickRef.current = distanceFromBottom <= BOTTOM_THRESHOLD_PX;
     };
     el.addEventListener("scroll", onScroll, { passive: true });

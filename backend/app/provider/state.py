@@ -48,9 +48,7 @@ class FeedbackDraft:
         """
         if self.subject_kind is not None or self.headline:
             return False
-        return not any(
-            s.situation or s.behavior or s.impact or s.occurred_at for s in self.sbis
-        )
+        return not any(s.situation or s.behavior or s.impact or s.occurred_at for s in self.sbis)
 
     def add_sbi(self) -> SBIDraft:
         sbi = SBIDraft(idx=len(self.sbis))

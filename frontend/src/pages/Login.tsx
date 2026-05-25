@@ -6,7 +6,10 @@ export default function Login({ onLogin }: { onLogin: (u: User) => void }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listUsers().then(setUsers).catch((e) => setError(String(e)));
+    api
+      .listUsers()
+      .then(setUsers)
+      .catch((e) => setError(String(e)));
   }, []);
 
   if (error) return <div className="p-8 text-rose-600">{error}</div>;
@@ -16,9 +19,7 @@ export default function Login({ onLogin }: { onLogin: (u: User) => void }) {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="bg-white shadow rounded-xl p-8 w-full max-w-md">
         <h1 className="text-xl font-semibold text-slate-800 mb-2">McCauley</h1>
-        <p className="text-slate-500 mb-6 text-sm">
-          Demo build. Pick a seeded user to sign in as.
-        </p>
+        <p className="text-slate-500 mb-6 text-sm">Demo build. Pick a seeded user to sign in as.</p>
         <ul className="divide-y divide-slate-100">
           {users.map((u) => (
             <li key={u.id}>

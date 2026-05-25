@@ -38,19 +38,19 @@ class Base(DeclarativeBase):
     pass
 
 
-class SubjectKind(str, enum.Enum):
+class SubjectKind(enum.StrEnum):
     user = "user"
     unit = "unit"
 
 
-class Sentiment(str, enum.Enum):
+class Sentiment(enum.StrEnum):
     positive = "positive"
     constructive = "constructive"
     negative = "negative"
     mixed = "mixed"
 
 
-class FeedbackStatus(str, enum.Enum):
+class FeedbackStatus(enum.StrEnum):
     draft = "draft"
     submitted = "submitted"
     flagged = "flagged"
@@ -92,12 +92,8 @@ class OrgSubordinate(Base):
     """
 
     __tablename__ = "org_subordinates"
-    ancestor_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), primary_key=True
-    )
-    descendant_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), primary_key=True
-    )
+    ancestor_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    descendant_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
 
 
 class UnitOversight(Base):
@@ -172,7 +168,10 @@ class Feedback(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     sbis: Mapped[list[SBIInstance]] = relationship(
-        "SBIInstance", back_populates="feedback", cascade="all, delete-orphan", order_by="SBIInstance.idx"
+        "SBIInstance",
+        back_populates="feedback",
+        cascade="all, delete-orphan",
+        order_by="SBIInstance.idx",
     )
 
 

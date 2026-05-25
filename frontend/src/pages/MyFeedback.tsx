@@ -133,10 +133,7 @@ export default function MyFeedback() {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.warn("[recipient WS] send while not OPEN", ws?.readyState);
-      setMessages((m) => [
-        ...m,
-        { role: "bot", text: "(not connected — refresh the page)" },
-      ]);
+      setMessages((m) => [...m, { role: "bot", text: "(not connected — refresh the page)" }]);
       return;
     }
     setMessages((m) => [...m, { role: "you", text }]);
@@ -220,7 +217,9 @@ export default function MyFeedback() {
               Send
             </button>
             <button
-              onClick={() => send("Generate a report on the feedback I have access to in the last 90 days.")}
+              onClick={() =>
+                send("Generate a report on the feedback I have access to in the last 90 days.")
+              }
               disabled={pending}
               className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700 disabled:opacity-50"
             >
@@ -231,10 +230,7 @@ export default function MyFeedback() {
       </div>
       <aside className="bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
         {selectedSourceId === null ? (
-          <SourceList
-            sources={sources}
-            onSelect={(id) => setSelectedSourceId(id)}
-          />
+          <SourceList sources={sources} onSelect={(id) => setSelectedSourceId(id)} />
         ) : (
           <SourceDetail
             source={sources.find((s) => s.id === selectedSourceId) ?? null}
@@ -246,13 +242,7 @@ export default function MyFeedback() {
   );
 }
 
-function SourceList({
-  sources,
-  onSelect,
-}: {
-  sources: Source[];
-  onSelect: (id: string) => void;
-}) {
+function SourceList({ sources, onSelect }: { sources: Source[]; onSelect: (id: string) => void }) {
   return (
     <>
       <h3 className="text-xs uppercase font-medium text-slate-500 px-4 pt-4 pb-3 shrink-0">
@@ -260,9 +250,7 @@ function SourceList({
       </h3>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
         {sources.length === 0 && (
-          <div className="text-slate-400 text-sm">
-            Citations appear here after the bot answers.
-          </div>
+          <div className="text-slate-400 text-sm">Citations appear here after the bot answers.</div>
         )}
         <ul className="space-y-2 text-sm">
           {sources.map((s) => (
@@ -294,21 +282,12 @@ const SENTIMENT_STYLES: Record<string, string> = {
   mixed: "bg-slate-100 text-slate-700",
 };
 
-function SourceDetail({
-  source,
-  onBack,
-}: {
-  source: Source | null;
-  onBack: () => void;
-}) {
+function SourceDetail({ source, onBack }: { source: Source | null; onBack: () => void }) {
   if (!source) {
     // Source vanished (new query cleared the list). Bounce back.
     return (
       <div className="p-4 text-sm text-slate-500">
-        <button
-          onClick={onBack}
-          className="text-slate-600 hover:text-slate-900 text-xs"
-        >
+        <button onClick={onBack} className="text-slate-600 hover:text-slate-900 text-xs">
           ← Back
         </button>
         <div className="mt-3">This source is no longer in the current results.</div>
@@ -324,9 +303,7 @@ function SourceDetail({
         >
           ← Back
         </button>
-        <span className="text-xs uppercase font-medium text-slate-500 ml-auto">
-          Source
-        </span>
+        <span className="text-xs uppercase font-medium text-slate-500 ml-auto">Source</span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 text-sm space-y-3">
         <div>
@@ -339,13 +316,11 @@ function SourceDetail({
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           <dt className="text-slate-500">From</dt>
           <dd className="text-slate-700">
-            {source.is_anonymous ? "anonymous" : source.provider ?? "—"}
+            {source.is_anonymous ? "anonymous" : (source.provider ?? "—")}
           </dd>
           <dt className="text-slate-500">Submitted</dt>
           <dd className="text-slate-700">
-            {source.submitted_at
-              ? new Date(source.submitted_at).toLocaleDateString()
-              : "—"}
+            {source.submitted_at ? new Date(source.submitted_at).toLocaleDateString() : "—"}
           </dd>
           <dt className="text-slate-500">ID</dt>
           <dd className="text-slate-400 font-mono">{source.id.slice(0, 8)}…</dd>
@@ -355,38 +330,25 @@ function SourceDetail({
             {source.sentiment && (
               <span
                 className={`px-2 py-0.5 rounded text-xs ${
-                  SENTIMENT_STYLES[source.sentiment] ??
-                  "bg-slate-100 text-slate-700"
+                  SENTIMENT_STYLES[source.sentiment] ?? "bg-slate-100 text-slate-700"
                 }`}
               >
                 {source.sentiment}
               </span>
             )}
             {source.topic_tags.map((t) => (
-              <span
-                key={t}
-                className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700"
-              >
+              <span key={t} className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
                 {t}
               </span>
             ))}
           </div>
         )}
         <div className="space-y-3">
-          <div className="text-xs uppercase font-medium text-slate-500">
-            Examples
-          </div>
-          {source.sbis.length === 0 && (
-            <div className="text-slate-400">none</div>
-          )}
+          <div className="text-xs uppercase font-medium text-slate-500">Examples</div>
+          {source.sbis.length === 0 && <div className="text-slate-400">none</div>}
           {source.sbis.map((s) => (
-            <div
-              key={s.idx}
-              className="border border-slate-200 rounded p-2 space-y-1.5"
-            >
-              <div className="font-medium text-slate-500 text-xs">
-                #{s.idx + 1}
-              </div>
+            <div key={s.idx} className="border border-slate-200 rounded p-2 space-y-1.5">
+              <div className="font-medium text-slate-500 text-xs">#{s.idx + 1}</div>
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                 <dt className="text-slate-500">S</dt>
                 <dd className="text-slate-800 whitespace-pre-wrap break-words">

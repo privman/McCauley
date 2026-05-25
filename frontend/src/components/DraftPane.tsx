@@ -88,15 +88,12 @@ function DraftRow({
   status: "current" | "paused";
   onPick: (local_id: string) => void;
 }) {
-  const label =
-    draft.subject?.name ?? draft.headline ?? `Draft ${draft.local_id}`;
+  const label = draft.subject?.name ?? draft.headline ?? `Draft ${draft.local_id}`;
   return (
     <button
       onClick={() => onPick(draft.local_id)}
       className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 ${
-        status === "current"
-          ? "bg-emerald-50 text-emerald-900"
-          : "text-slate-700 hover:bg-slate-50"
+        status === "current" ? "bg-emerald-50 text-emerald-900" : "text-slate-700 hover:bg-slate-50"
       }`}
     >
       <span className={status === "current" ? "text-emerald-600" : "text-slate-300"}>
@@ -180,13 +177,7 @@ function DraftDetail({
   );
 }
 
-function KVGrid({
-  rows,
-  small,
-}: {
-  rows: [string, ReactNode][];
-  small?: boolean;
-}) {
+function KVGrid({ rows, small }: { rows: [string, ReactNode][]; small?: boolean }) {
   return (
     <dl
       className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center ${

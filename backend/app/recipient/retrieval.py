@@ -17,7 +17,6 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-
 from typing import Any
 
 from sqlalchemy import text

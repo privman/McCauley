@@ -68,9 +68,7 @@ async def current_user(
     user_id = _user_id_from_cookie(cookie)
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="not logged in")
-    user = (
-        await session.execute(select(User).where(User.id == user_id))
-    ).scalar_one_or_none()
+    user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None or not user.active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown user")
     # Critical: this is what feedback_visible_to_me reads.

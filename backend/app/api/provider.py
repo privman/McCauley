@@ -15,7 +15,7 @@ from fastapi import APIRouter, Cookie, Query, WebSocket, WebSocketDisconnect, st
 from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import _user_id_from_cookie, COOKIE_NAME
+from app.auth import COOKIE_NAME, _user_id_from_cookie
 from app.current_user import UserProfile, load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
@@ -74,9 +74,7 @@ async def provider_ws(
                 await ws.close()
                 return
         else:
-            convo = Conversation(
-                org_id=org_id, user_id=user_id, mode="provider"
-            )
+            convo = Conversation(org_id=org_id, user_id=user_id, mode="provider")
             session.add(convo)
             await session.commit()
             await session.refresh(convo)
@@ -93,9 +91,7 @@ async def provider_ws(
         if is_new_conversation:
             # Deterministic greeting — no LLM call, no model history entry.
             # Just gives the user something to read on connect.
-            await ws.send_json(
-                {"type": "assistant_text", "text": greeting(current_user)}
-            )
+            await ws.send_json({"type": "assistant_text", "text": greeting(current_user)})
         while True:
             raw = await ws.receive_text()
             try:
@@ -121,21 +117,15 @@ async def provider_ws(
                     await _set_pg_user(session, user_id)
                     async for event in orchestrator.step(session, user_text):
                         if isinstance(event, TextDelta):
-                            await ws.send_json(
-                                {"type": "assistant_text_delta", "text": event.text}
-                            )
+                            await ws.send_json({"type": "assistant_text_delta", "text": event.text})
                         else:
                             result = event
 
             assert result is not None  # orchestrator always yields a final TurnResult
-            await ws.send_json(
-                {"type": "draft_state", "stack": result.stack_payload}
-            )
+            await ws.send_json({"type": "draft_state", "stack": result.stack_payload})
             for fb_id in result.submitted_feedback_ids:
                 await ws.send_json({"type": "submitted", "feedback_id": str(fb_id)})
-            await ws.send_json(
-                {"type": "assistant_text", "text": result.assistant_text}
-            )
+            await ws.send_json({"type": "assistant_text", "text": result.assistant_text})
             logger.info(
                 "provider convo=%s response_complete chars=%d submitted=%d",
                 convo_id,

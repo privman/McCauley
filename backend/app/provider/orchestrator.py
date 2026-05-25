@@ -371,7 +371,9 @@ class ProviderConversation:
             return {"users": related, "count": len(related)}, None
 
         if name == "update_draft":
-            draft = self.stack.get(args["local_id"]) if self.stack.current else self.stack.new_draft()
+            draft = (
+                self.stack.get(args["local_id"]) if self.stack.current else self.stack.new_draft()
+            )
             field_name = args["field"]
             value = args["value"]
             if field_name == "subject":
@@ -507,9 +509,7 @@ class ProviderConversation:
         await finalize_submission(session, fb.id)
         return fb.id
 
-    async def step(
-        self, session: AsyncSession, user_text: str
-    ) -> AsyncIterator[StreamEvent]:
+    async def step(self, session: AsyncSession, user_text: str) -> AsyncIterator[StreamEvent]:
         """Process one user turn as an async stream.
 
         Yields TextDelta events as the model produces text (across any
@@ -603,7 +603,7 @@ class ProviderConversation:
                         "content": json.dumps(result),
                     }
                 )
-            self.history.append({"role": "user", "content": tool_results})
+            self.history.append(cast(MessageParam, {"role": "user", "content": tool_results}))
 
         # Tool-call ping-pong didn't terminate; bail.
         yield TurnResult(

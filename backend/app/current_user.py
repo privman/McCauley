@@ -53,9 +53,7 @@ class UserProfile:
         return "\n".join(lines)
 
 
-async def load_current_user(
-    session: AsyncSession, user_id: uuid.UUID
-) -> UserProfile:
+async def load_current_user(session: AsyncSession, user_id: uuid.UUID) -> UserProfile:
     """Fetch the current user's identity context in one shot."""
     user = await session.get(User, user_id)
     if user is None:

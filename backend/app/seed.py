@@ -18,7 +18,6 @@ import csv
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from sqlalchemy import select, text
 
@@ -62,7 +61,7 @@ async def _embed_batch(texts: list[str]) -> list[list[float]]:
     if not settings.voyage_api_key:
         logger.warning("VOYAGE_API_KEY not set — using zero embeddings")
         return [[0.0] * 1024 for _ in texts]
-    import voyageai  # type: ignore[import-untyped]
+    import voyageai
 
     client = voyageai.Client(api_key=settings.voyage_api_key)
     result = await asyncio.to_thread(
@@ -88,25 +87,43 @@ async def seed() -> None:
         if existing is not None:
             logger.info("wiping existing demo org")
             await session.execute(
-                text("DELETE FROM feedback_chunks WHERE feedback_id IN "
-                     "(SELECT id FROM feedback WHERE org_id = :oid)"),
+                text(
+                    "DELETE FROM feedback_chunks WHERE feedback_id IN "
+                    "(SELECT id FROM feedback WHERE org_id = :oid)"
+                ),
                 {"oid": existing.id},
             )
             await session.execute(
-                text("DELETE FROM sbi_instances WHERE feedback_id IN "
-                     "(SELECT id FROM feedback WHERE org_id = :oid)"),
+                text(
+                    "DELETE FROM sbi_instances WHERE feedback_id IN "
+                    "(SELECT id FROM feedback WHERE org_id = :oid)"
+                ),
                 {"oid": existing.id},
             )
-            await session.execute(text("DELETE FROM feedback WHERE org_id = :oid"), {"oid": existing.id})
-            await session.execute(text("DELETE FROM conversation_turns WHERE conversation_id IN "
-                                       "(SELECT id FROM conversations WHERE org_id = :oid)"),
-                                  {"oid": existing.id})
-            await session.execute(text("DELETE FROM conversations WHERE org_id = :oid"), {"oid": existing.id})
-            await session.execute(text("DELETE FROM topic_taxonomy WHERE org_id = :oid"), {"oid": existing.id})
+            await session.execute(
+                text("DELETE FROM feedback WHERE org_id = :oid"), {"oid": existing.id}
+            )
+            await session.execute(
+                text(
+                    "DELETE FROM conversation_turns WHERE conversation_id IN "
+                    "(SELECT id FROM conversations WHERE org_id = :oid)"
+                ),
+                {"oid": existing.id},
+            )
+            await session.execute(
+                text("DELETE FROM conversations WHERE org_id = :oid"), {"oid": existing.id}
+            )
+            await session.execute(
+                text("DELETE FROM topic_taxonomy WHERE org_id = :oid"), {"oid": existing.id}
+            )
             await session.execute(text("DELETE FROM unit_oversight"))
             await session.execute(text("DELETE FROM org_subordinates"))
-            await session.execute(text("DELETE FROM org_units WHERE org_id = :oid"), {"oid": existing.id})
-            await session.execute(text("DELETE FROM users WHERE org_id = :oid"), {"oid": existing.id})
+            await session.execute(
+                text("DELETE FROM org_units WHERE org_id = :oid"), {"oid": existing.id}
+            )
+            await session.execute(
+                text("DELETE FROM users WHERE org_id = :oid"), {"oid": existing.id}
+            )
             await session.execute(text("DELETE FROM orgs WHERE id = :oid"), {"oid": existing.id})
             await session.commit()
 
@@ -222,9 +239,7 @@ async def seed() -> None:
             if len(sbi_parts) == 3:
                 s, b, i = (p.strip() for p in sbi_parts)
                 session.add(
-                    SBIInstance(
-                        feedback_id=fb.id, idx=0, situation=s, behavior=b, impact=i
-                    )
+                    SBIInstance(feedback_id=fb.id, idx=0, situation=s, behavior=b, impact=i)
                 )
                 sbis = [(s, b, i)]
             else:
@@ -235,9 +250,7 @@ async def seed() -> None:
         # Pass 2: one batched Voyage call, then insert chunks.
         embeddings = await _embed_batch([content for _, content in chunk_inputs])
         for (fb_id, content), embedding in zip(chunk_inputs, embeddings, strict=True):
-            session.add(
-                FeedbackChunk(feedback_id=fb_id, content=content, embedding=embedding)
-            )
+            session.add(FeedbackChunk(feedback_id=fb_id, content=content, embedding=embedding))
         await session.commit()
         logger.info("seeded %d feedback records", len(feedback_rows))
 

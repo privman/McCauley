@@ -87,28 +87,20 @@ async def recipient_ws(
             result: RecipientTurnResult | None = None
             async with sessionmaker()() as session:
                 async with session.begin():
-                    await session.execute(
-                        sql_text(f"SET LOCAL app.current_user_id = '{user_id}'")
-                    )
+                    await session.execute(sql_text(f"SET LOCAL app.current_user_id = '{user_id}'"))
                     async for event in orchestrator.step(session, user_text):
                         if isinstance(event, TextDelta):
-                            await ws.send_json(
-                                {"type": "assistant_text_delta", "text": event.text}
-                            )
+                            await ws.send_json({"type": "assistant_text_delta", "text": event.text})
                         elif isinstance(event, SourcesUpdate):
                             # Streamed mid-turn so the sources panel fills
                             # in as tool calls complete, before the model
                             # finishes writing prose.
-                            await ws.send_json(
-                                {"type": "sources", "items": event.sources}
-                            )
+                            await ws.send_json({"type": "sources", "items": event.sources})
                         else:
                             result = event
 
             assert result is not None
-            await ws.send_json(
-                {"type": "assistant_text", "text": result.assistant_text}
-            )
+            await ws.send_json({"type": "assistant_text", "text": result.assistant_text})
             logger.info(
                 "recipient convo=%s response_complete chars=%d sources=%d",
                 convo_id,
