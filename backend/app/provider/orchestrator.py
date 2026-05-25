@@ -480,6 +480,32 @@ class ProviderConversation:
             language_label=loc.variant_label,
         )
 
+    def _draft_lookup_error(self, attempted: str) -> dict[str, Any]:
+        """Return the structured response a tool sends back when it was called
+        with a local_id that doesn't match any in-flight draft.
+
+        Built to be self-correcting: the model gets the real local_ids in
+        the same payload, so its next round can retry without a
+        list_drafts hop. This is the common multi-tool-call failure mode
+        — the model emits two update_draft blocks in one response with
+        an invented id, the first call auto-creates a draft and assigns
+        the real id, the second arrives with the stale invented id and
+        used to crash. Now it gets a hint and recovers in one round.
+        """
+        paused_ids = [d.local_id for d in self.stack.paused]
+        current_id = self.stack.current.local_id if self.stack.current else None
+        return {
+            "ok": False,
+            "error": (
+                f"No draft with local_id {attempted!r}. "
+                f"Current draft is {current_id!r}; "
+                "use that local_id (or resume_draft a paused one first). "
+                "Local_ids are assigned by the server — never invent them."
+            ),
+            "current_local_id": current_id,
+            "paused_local_ids": paused_ids,
+        }
+
     async def handle_tool(
         self, session: AsyncSession, name: str, args: dict[str, Any]
     ) -> tuple[Any, uuid.UUID | None]:
@@ -508,9 +534,13 @@ class ProviderConversation:
             return {"users": related, "count": len(related)}, None
 
         if name == "update_draft":
-            draft = (
-                self.stack.get(args["local_id"]) if self.stack.current else self.stack.new_draft()
-            )
+            if self.stack.current is None:
+                draft = self.stack.new_draft()
+            else:
+                try:
+                    draft = self.stack.get(args["local_id"])
+                except KeyError:
+                    return self._draft_lookup_error(args["local_id"]), None
             field_name = args["field"]
             value = args["value"]
             if field_name == "subject":
@@ -564,12 +594,18 @@ class ProviderConversation:
             return {"ok": True, "draft": draft.to_payload()}, None
 
         if name == "add_sbi":
-            draft = self.stack.get(args["local_id"])
+            try:
+                draft = self.stack.get(args["local_id"])
+            except KeyError:
+                return self._draft_lookup_error(args["local_id"]), None
             sbi = draft.add_sbi()
             return {"ok": True, "sbi_idx": sbi.idx, "draft": draft.to_payload()}, None
 
         if name == "update_sbi":
-            draft = self.stack.get(args["local_id"])
+            try:
+                draft = self.stack.get(args["local_id"])
+            except KeyError:
+                return self._draft_lookup_error(args["local_id"]), None
             draft.update_sbi(args["sbi_idx"], args["field"], args["value"])
             return {"ok": True, "draft": draft.to_payload()}, None
 
@@ -581,7 +617,10 @@ class ProviderConversation:
             return {"ok": True, "local_id": draft.local_id}, None
 
         if name == "resume_draft":
-            draft = self.stack.resume(args["local_id"])
+            try:
+                draft = self.stack.resume(args["local_id"])
+            except KeyError:
+                return self._draft_lookup_error(args["local_id"]), None
             stub_old_tool_results(self.history, keep=0)
             return {"ok": True, "draft": draft.to_payload()}, None
 
@@ -596,7 +635,10 @@ class ProviderConversation:
             return payload, None
 
         if name == "submit_draft":
-            draft = self.stack.get(args["local_id"])
+            try:
+                draft = self.stack.get(args["local_id"])
+            except KeyError:
+                return self._draft_lookup_error(args["local_id"]), None
             ok, why = draft.ready_to_submit()
             if not ok:
                 return {"ok": False, "error": why}, None
