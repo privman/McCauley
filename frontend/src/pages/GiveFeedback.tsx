@@ -22,7 +22,7 @@ export default function GiveFeedback() {
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
   const [voiceStarting, setVoiceStarting] = useState(false);
-  const [voiceReady, setVoiceReady] = useState(false);
+  const [_voiceReady, setVoiceReady] = useState(false);
   const [voiceSpeed, setVoiceSpeed] = useState<number>(1);
   const textWsRef = useRef<WebSocket | null>(null);
   const voiceRef = useRef<VoiceSession | null>(null);

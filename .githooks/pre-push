@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Runs the same checks the CI workflow runs, so accidental breakage doesn't
+# leave the local repo. Skip with `git push --no-verify` when you know what
+# you're doing (e.g. work-in-progress branch).
+#
+# Wired up by `./bin/setup`.
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Use the project venv for backend tools (ruff/black/mypy/pytest).
+# `./bin/setup` creates it on first run; this hook just borrows its PATH.
+if [ -d backend/.venv ]; then
+    export PATH="$REPO_ROOT/backend/.venv/bin:$PATH"
+else
+    cat >&2 <<EOF
+✗ backend/.venv missing. Run ./bin/setup first.
+EOF
+    exit 1
+fi
+
+# Fail fast on a missing prerequisite — pytest's integration test
+# (test_acl_view.py) spins up Postgres via testcontainers, which needs
+# a running Docker engine. Surfacing this here keeps the user from
+# watching 20 seconds of other checks pass before pytest blows up.
+if ! docker info > /dev/null 2>&1; then
+    cat >&2 <<EOF
+✗ Docker isn't running.
+  The pytest integration test needs it (testcontainers spins up Postgres).
+  Start Docker and retry.
+EOF
+    exit 1
+fi
+
+echo "── backend ──────────────────────────────────────"
+cd backend
+ruff check .
+black --check .
+mypy app
+pytest -v
+cd ..
+
+echo "── frontend ─────────────────────────────────────"
+cd frontend
+npm run format:check
+npm run lint
+npm run typecheck
+cd ..
+
+echo "── all checks passed ────────────────────────────"

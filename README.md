@@ -34,6 +34,12 @@ cp .env.example ops/.env
 #   GOOGLE_APPLICATION_CREDENTIALS_SOURCE=/absolute/path/on/your/host/to/google-credentials.json
 #   SESSION_SECRET=any-random-string
 
+# One-time setup: install backend + frontend dev deps and wire up
+# the pre-push hook so `git push` runs the same checks CI does.
+# See "Pre-push hook" below for what it runs.
+# Safe to re-run to make sure deps are up to date.
+./bin/setup
+
 docker compose -f ops/docker-compose.yml up --build
 ```
 
@@ -115,6 +121,13 @@ The two load-bearing checks called out in v0.1-scope.md:
 
 - `tests/test_closure.py` — pure-Python unit tests of the org-graph closure computation.
 - `tests/test_acl_view.py` — integration test of `feedback_visible_to_me` against real Postgres.
+
+## Pre-push hook
+
+`.githooks/pre-push` runs the same six checks CI runs (`ruff`, `black`,
+`mypy`, `pytest`, `prettier`, `eslint`, `tsc`) before any `git push`.
+Wired up by `./bin/setup`. Skip a particular push with
+`git push --no-verify` for a known-broken WIP branch.
 
 ## What's *not* here
 

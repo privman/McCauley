@@ -42,8 +42,9 @@ async def postgres_url() -> AsyncIterator[str]:
         # Run Alembic in a worker thread — its env.py calls asyncio.run(),
         # which conflicts with pytest-asyncio's already-running event loop
         # in this fixture.
-        from alembic import command
         from alembic.config import Config
+
+        from alembic import command
 
         def _migrate() -> None:
             cfg = Config("alembic.ini")

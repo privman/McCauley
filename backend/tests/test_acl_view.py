@@ -14,7 +14,7 @@ import uuid
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.closure import recompute
 from app.models import (
@@ -35,8 +35,8 @@ async def _visible_ids(session: AsyncSession, user_id: uuid.UUID) -> set[uuid.UU
     async with session.begin():
         await _set_user(session, user_id)
         rows = (
-            await session.execute(text("SELECT id FROM feedback_visible_to_me"))
-        ).scalars().all()
+            (await session.execute(text("SELECT id FROM feedback_visible_to_me"))).scalars().all()
+        )
         return set(rows)
 
 
@@ -69,12 +69,8 @@ async def test_acl_view_respects_closures(
         root = OrgUnit(org_id=org.id, name="Root", head_user_id=ceo.id)
         session.add(root)
         await session.flush()
-        team_a = OrgUnit(
-            org_id=org.id, name="Team A", parent_unit_id=root.id, head_user_id=vp_a.id
-        )
-        team_b = OrgUnit(
-            org_id=org.id, name="Team B", parent_unit_id=root.id, head_user_id=vp_b.id
-        )
+        team_a = OrgUnit(org_id=org.id, name="Team A", parent_unit_id=root.id, head_user_id=vp_a.id)
+        team_b = OrgUnit(org_id=org.id, name="Team B", parent_unit_id=root.id, head_user_id=vp_b.id)
         session.add_all([team_a, team_b])
         await session.flush()
         await session.commit()
