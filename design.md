@@ -163,7 +163,7 @@ A back-of-envelope estimate using vendor list prices as of May 2026. The point i
 
 - Engineering salaries, on-call, customer success.
 - One-time costs (initial org-graph import per tenant, security audits, pen tests).
-- Negotiated enterprise discounts (Anthropic, Google, AWS all typically discount 20-40% at this scale — so the realistic number is closer to **$100-120k/month**).
+- Negotiated enterprise discounts (Anthropic and Google both typically discount 20-40% at this scale — so the realistic number is closer to **$100-120k/month**).
 - Premium-voice upgrade tier (ElevenLabs) — would add ~$0.25/voice conversation if customers opt in.
 - DDoS protection, WAF, SOC 2 audit tooling.
 
@@ -174,6 +174,16 @@ A back-of-envelope estimate using vendor list prices as of May 2026. The point i
 3. **Postgres** dominates fixed cost. A move to a dedicated vector store would *increase* fixed cost in v1; defer until query volume forces it.
 
 > **Hyperscaler choice:** committed to **GCP** with **Cloud SQL Postgres** in v1 (upgrade path to AlloyDB). See [cloud-choice.md](cloud-choice.md) for the AWS-vs-GCP cost comparison, managed-RDBMS evaluation (RDS / Aurora / Cloud SQL / AlloyDB / Spanner), and revisit triggers.
+
+### 3.2 Voice transport
+
+Voice mode is half-duplex push-to-talk for the interviewer use case (full duplex / barge-in is a §13 improvement). End-to-end audio path:
+
+- **Browser → backend (mic).** The SPA captures mic input via the Web Audio API, downsamples to 16 kHz mono LINEAR16 PCM, and streams the frames over the conversation WebSocket as binary messages. The backend pipes them into a Google STT v2 streaming gRPC connection (Chirp 2 model). Interim transcripts are forwarded to the SPA for live-caption rendering; the final transcript triggers an orchestrator turn.
+- **Backend → browser (TTS).** As the orchestrator's text streams from Sonnet, the backend buffers it into sentence-sized chunks and dispatches each to Google TTS Neural2 in parallel. Audio for the first sentence starts playing while the model is still writing the second — first-sample latency tracks the model's first-period emission rather than its full response. Each synthesised chunk arrives from Google as a WAV blob; the backend streams the raw LINEAR16 PCM back over the same WebSocket as binary frames. The browser queues each chunk into a Web Audio `AudioBufferSourceNode` and plays them in order; the same WebSocket also carries the text deltas so the chat fills in word-by-word alongside the audio.
+- **Why `AudioBufferSourceNode` for playback?** Lowest first-sample latency (raw PCM → speaker, no decoder warmup) and trivial interrupt semantics — calling `source.stop()` kills the in-flight utterance immediately if the user presses the mic again, so the agent never hears itself. The tradeoff is no codec packet-loss concealment: a dropped chunk plays as a hard click rather than a graceful interpolation, which is fine on a tight relay path inside our datacenter but breaks down once users are on flakier networks. The §13 MSE-over-Opus switch addresses it as an early post-v1 polish — UX-driven, not deferred to some higher scale.
+- **User-selectable playback speed.** The SPA exposes a small dropdown of playback speeds (0.5× through 2×) next to the mic button. Selection is per-session, sent to the backend as a `set_speed` WS frame, and applied to subsequent TTS syntheses via Google's `speaking_rate` parameter. Default is a brisk, conversational pacing for an interviewer bot.
+- **Scale-out alternative.** An ephemeral-token path lets the browser open the STT/TTS gRPC connections directly against Google, bypassing the backend for audio bytes in both directions. Saves backend egress and a per-chunk hop of latency at the cost of an issuer endpoint and per-tenant quota juggling. Deferred until per-region concurrent-stream count or backend egress make the relay hop significant.
 
 ---
 
@@ -193,7 +203,7 @@ org_units(id, org_id, name, parent_unit_id, head_user_id)
 conversations(id, org_id, user_id, mode /* provider|recipient */,
               started_at, ended_at, language, channel /* text|voice */)
 conversation_turns(id, conversation_id, idx, role /* user|assistant|tool */,
-                   content_text, content_audio_s3_key, tokens_in, tokens_out,
+                   content_text, content_audio_gcs_key, tokens_in, tokens_out,
                    created_at)
 
 -- Feedback records (the structured artifact)
@@ -435,7 +445,8 @@ After each SBI is captured, the orchestrator asks whether another example suppor
 
 **Tools exposed to the LLM** (provider mode):
 
-- `resolve_entity(query, kind)` → returns top-K matches with disambiguation hints (title, manager, unit). When >1 match is plausible, the LLM is required to ask a disambiguation question before any further field write.
+- `resolve_entity(query, kind)` → returns top-K matches with disambiguation hints (title, manager/head, unit). When >1 match is plausible, the LLM is required to ask a disambiguation question before any further field write.
+- `org_graph(user_id, relation)` → navigates the reporting tree from a starting user. `relation` is one of `manager`, `manager_chain`, `direct_reports`, `all_reports`; returns the related users with name and title. Used for self-referential phrases ("my manager", "my direct reports") by passing the conversation's current user id from the system prompt, or chained from `resolve_entity` for a third party ("Priya's direct reports").
 - `update_draft(local_id, field, value)` — for draft-level fields (subject, headline, sentiment).
 - `add_sbi(local_id)` → returns a new `sbi_idx` for the draft; subsequent `update_sbi` calls target it.
 - `update_sbi(local_id, sbi_idx, field, value)` — for situation, behavior, impact, time.
@@ -446,6 +457,8 @@ After each SBI is captured, the orchestrator asks whether another example suppor
 - `load_skill(skill_name)` → returns the full markdown body of a named coaching skill (see §5.1).
 
 The LLM cannot directly write to the DB. Tool handlers validate every write.
+
+**Context management.** Each user turn re-sends the entire conversation history to Sonnet; left unchecked, this drives input-token spend and runs into Anthropic's per-minute input-token ceiling on active sessions. The orchestrator compacts the history in place: tool_result payloads from older turns are replaced with a small `{omitted: true}` stub so search results and draft echoes stop costing tokens once they've aged past the model's tool result horizon. The most recent few results stay intact for grounding the current exchange. On `pivot_to_new_draft`, `resume_draft`, and `submit_draft` the compaction runs aggressively (all tool_results are stubbed) — switching drafts means prior retrievals are unlikely to be useful for the new one. Conversation text itself isn't summarised at v1; LLM-summarised history compaction is a post-v1 path (§13).
 
 ### 5.1 Coaching skills
 
@@ -471,10 +484,14 @@ Much simpler — a RAG chat agent constrained by the `feedback_visible_to_me` vi
 
 **Tools exposed to the LLM** (recipient mode):
 
-- `search_feedback(query, filters)` → hybrid retrieval over the recipient's visible slice. Filters: `subject_user_id`, `subject_unit_id`, `date_range`, `sentiment`, `topic_slugs[]` (validated against `topic_taxonomy`, applied as a pre-filter on the `topic_tags` array — see §4.4).
+- `resolve_entity(query, kind)` → same shape as provider mode (§5). Used to translate "feedback about Priya" or "the Mobile team" into a subject id the agent can pass to `search_feedback`.
+- `org_graph(user_id, relation)` → same shape as provider mode (§5). Used to expand a single user id into a relational set — "Priya's direct reports", "everyone in my reporting tree" — that the agent passes as the `subject_user_ids` filter to `search_feedback`. 
+- `search_feedback(query, filters)` → hybrid retrieval over the recipient's visible slice. Filters: `subject_user_ids[]`, `subject_unit_ids[]`, `date_range`, `sentiment`, `topic_slugs[]` (validated against `topic_taxonomy`, applied as a pre-filter on the `topic_tags` array — see §4.4).
 - `generate_report(scope, period, format)` → produces a structured summary (markdown or PDF) of feedback in scope.
 
 Every retrieval call passes `current_user_id` to the SQL view; the LLM never sees a `user_id` parameter for authorization. The LLM is told in the system prompt that it can only see authorized feedback, but the **enforcement is the view, not the prompt.**
+
+**Streaming.** Sonnet's text output streams back to the SPA token-by-token over the WebSocket so the chat fills in as the model writes. Sources returned by tool calls (in recipient mode) or drafts updates (in provider mode) stream in alongside — each tool round flushes its results to the relevant panel before the model has finished its prose, so the UI is always up to date at the end of each turn.
 
 ### 6.1 Prompt-injection defenses
 
@@ -524,9 +541,10 @@ Single-page React app, two routes:
 │   └─────────────────────────┘ │                             │
 │   ┌─────────────────────────┐ │  Current draft (#2)         │
 │   │ You: Yeah, the Android  │ │  ─────────────────────────  │
-│   │ migration also slipped..│ │  Subject:  Mobile team      │
-│   └─────────────────────────┘ │  Point:    releases keep    │
-│                               │            slipping         │
+│   │ migration also slipped..│ │  Subject:   Mobile team     │
+│   └─────────────────────────┘ │  Point:     releases keep   │
+│                               │             slipping        │
+│                               │  Anonymous: No              │
 │   [ 🎤 hold to talk ]  [ ⌨️ ] │                             │
 │   ────────────────────────────│  Examples                   │
 │                               │  ─ #1 ● iOS 4.2 launch      │
@@ -543,40 +561,43 @@ Key UI moves:
 - **Live draft pane** on the right shows the headline plus a stack of SBI example cards, each filling in turn-by-turn. Removes the "did the bot understand me?" anxiety and makes it tangible that one feedback point can have multiple supporting examples.
 - **Draft switcher** makes the working set tangible — clicking a draft tells the bot to resume it.
 - **"+ add another example"** button lets the user proactively add a second SBI even when the bot doesn't prompt for one.
+- **"Submit" button** in the draft pane gives a one-click commit when the user is ready to finalise the record without typing "submit this". Routes through the agent so the same validation (≥1 complete SBI, all draft-level fields set) and the bias-check skill (§5.1) run before the record is persisted.
 - **Disambiguation chips** appear inline ("Did you mean: ① Alex Chen (Mobile) ② Alex Cheng (Platform)?"). One-click resolution.
 - **Push-to-talk** for voice; mode is per-turn — text and voice can interleave freely.
-- **Anonymity toggle** is per-conversation but visible per-draft (because the user might want some anonymous and some named in one session). Default off.
+- **Anonymity toggle** is per record draft — one session can mix anonymous and named records. Binds to each draft's `is_anonymous` field; the right-pane toggle flips it and synthesizes a user message so the agent sees the change in chat history. Changes by the agent using a tool call immediately update the UI. Default off.
 
 ### 7.2 `/my-feedback` (recipient)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Feedback inbox                                             │
-├───────────────┬─────────────────────────────────────────────┤
-│ Scope         │                                             │
-│ ─────────     │   Chat                                      │
-│ ⦿ About me    │   ┌──────────────────────────────────────┐  │
-│ ○ My team     │   │ You: Summarise feedback about my     │  │
-│ ○ Mobile org  │   │ direct reports in Q1.                │  │
-│ ○ Custom…     │   └──────────────────────────────────────┘  │
-│               │   ┌──────────────────────────────────────┐  │
-│ Filters       │   │ Bot: 14 feedback items across 6      │  │
-│ ───────       │   │ reports. Top themes: …               │  │
-│ Date: Q1 2026 │   │ [ Generate report ↓ ]                │  │
-│ Sentiment: ✱  │   └──────────────────────────────────────┘  │
-│ Topic: ✱      │                                             │
-│               │   Sources (5)                               │
-│               │   ─ Feedback #a3f… about Priya, 2026-02-14  │
-│               │   ─ Feedback #b91… about Mobile, 2026-03-02 │
-│               │                                             │
-└───────────────┴─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  McCauley · Review feedback                                      │
+├─────────────────────────────────────────────┬────────────────────┤
+│                                             │  Sources (5)       │
+│  ┌─────────────────────────────────────┐    │  ─────────────────│
+│  │ You: report on the Mobile team in Q1│    │  ⬚ Priya unblocks  │
+│  └─────────────────────────────────────┘    │    about Priya     │
+│  ┌─────────────────────────────────────┐    │    2026-02-14      │
+│  │ Bot: 7 engineers, top themes…       │    │  ⬚ Priya communic…│
+│  │ (cites [feedback …a3f])             │    │    about Priya     │
+│  └─────────────────────────────────────┘    │  ⬚ …               │
+│                                             │                    │
+│  [ chips: example prompts when empty ]      │                    │
+│  ┌──────────────────────────────┐ [ Send ]  │                    │
+│  │ Ask a question…              │ [Report ] │                    │
+│  └──────────────────────────────┘           │                    │
+└─────────────────────────────────────────────┴────────────────────┘
 ```
 
 Key UI moves:
 
-- **Sources panel** under every assistant turn — citations are clickable and open the full feedback record. Makes the system trustworthy and auditable.
-- **Scope selector** is a hard filter applied server-side, not a hint to the LLM. Users physically cannot widen scope from the UI past their authorization.
-- **"Generate report"** triggers a longer-form synthesis with sentiment breakdown, top themes, and verbatim quotes.
+- **Sources panel** on the right — list of cards while the model writes, click a card to enter a structured detail view (headline, subject, anonymity/author, S/B/I rows for each example). Sources stream in incrementally as tool calls complete, so the panel fills before the agent finishes its prose.
+- **Natural langauge search and retrieval.** The user expresses scope, date range, sentiment, and topics in their question ("feedback about my direct reports in Q1", "leadership feedback last month about Mobile"); the agent translates that into `search_feedback` args (subject_user_ids resolved via `resolve_entity` + `org_graph`, plus sentiment/topic_slugs/date_range). ACL is unchanged — every call goes through `feedback_visible_to_me`, so the agent's scope is always bounded by what the user is authorized to see.
+- **Example prompt chips** appear when the conversation has no messages yet, demonstrating the shapes of queries that work and enabling discovery ("What feedback came in about my reports this month?", "Summarise feedback about Priya.", "Generate a report on the Mobile team in Q1.").
+- **"Generate report"** is a one-click shortcut that injects a canned "report on the feedback I have access to in the last 90 days" prompt. The full longer-form synthesis (sentiment breakdown, top themes, verbatim quotes) is the model's response to that prompt — same chat surface, no separate report interface.
+
+### 7.3 Client resilience
+
+Real-world deployments see transient connection drops — mobile network handoffs, brief gateway hiccups, container restarts during rolling deploys, backend capacity saturation. The SPA wraps every backend HTTP call in retry-with-exponential-backoff for retriable errors: five attempts at 250 ms / 500 ms / 1 s / 2 s / 4 s, ~8 s total budget. 4XX and 5XX HTTP errors are not retried — those are real and persistent, and propagate immediately so the UI can show a sensible message. The retry sits inside the API helper so every call site (auth check, user list, login, logout, future REST endpoints) inherits it without per-call wiring. The WebSocket path is separate; it relies on its own reconnect logic and the orchestrator's resume-by-conversation-id semantics.
 
 ---
 
@@ -672,14 +693,17 @@ What we **don't** build in v1: read replicas, CQRS for reporting, dedicated sear
 
 ## 13. Potential Improvements (post-v1)
 
-- **Closed-loop coaching:** after submission, offer the provider a one-line "your feedback was clear/vague — here's why" coaching nudge.
-- **Trend dashboards:** aggregate sentiment over time per unit; useful for unit heads, distinct from individual feedback recipients.
-- **Cross-feedback theme clustering:** weekly job clusters recent feedback into emergent themes the recipient may not have asked about.
+- **MSE-based TTS playback over Opus** for smoother audio on flaky networks. Switch browser playback from Web Audio `AudioBufferSourceNode` over raw LINEAR16 PCM (see §3.2) to Media Source Extensions consuming `OGG_OPUS` from Google TTS, forwarded through the same WebSocket the relay path already uses. The driver is codec packet-loss concealment — small network gaps that produce hard clicks under raw-PCM-via-BufferSource turn into graceful interpolation under Opus. Worth doing earlier than the rest of §13: it's UX polish, not a ton of engineering, and it earns its keep at lower scale than the other items here because the bar is "any non-trivial share of users on cellular or rural connections", not a cost-line-item threshold. Costs to budget: MSE is known for iOS Safari format/timing quirks, and reworking `source.stop()` interrupt semantics into the MSE equivalent (pause + abort in-flight appends + clear `SourceBuffer` + handle async `updating` state). Server-side bandwidth reduction and native OS media controls on mobile come along as minor side benefits, not motivators.
 - **Slack / Teams entry point:** lower-friction collection than navigating to a web app.
 - **Active solicitation:** scheduled prompts ("you worked with X on project Y last month, want to share feedback?") gated by user opt-in.
+- **Cross-feedback theme clustering:** weekly job clusters recent feedback into emergent themes the recipient may not have asked about.
+- **Trend dashboards:** aggregate sentiment over time per unit; useful for unit heads, distinct from individual feedback recipients.
 - **Anonymous dialogue:** allow recipients to ask clarification questions and respond to anonymous feedback through the system, while preserving the providers' anonymity.
 - **Calibration mode:** managers comparing feedback across reports — distinct ACL surface, would need careful design.
+- **Closed-loop coaching:** after submission, offer the provider a one-line "your feedback was clear/vague — here's why" coaching nudge.
 - **On-prem / VPC deployment** for regulated customers.
+- **LLM-summarised history compaction.** v1 compacts conversation history by stubbing old `tool_result` payloads (see §5) — that handles the dominant token cost, which is search/draft echoes. The actual user/assistant text turns stay verbatim. Beyond v1, when conversations grow long enough that the text itself accumulates meaningfully, replace the oldest N text turns with a Haiku-generated summary kept in the leading position of the history. Carries the standard summarisation risks (lossy, can drift, can introduce hallucinated detail); defer until eval coverage exists to detect drift in downstream behaviour.
+- **Direct voice transport between browser and Google STT/TTS**, bypassing the backend. See the scale-out alternative bullet at the end of §3.2. Independent of and shipped later than the MSE switch above — that one's UX-driven and lands once user-network quality matters; this one's scale-driven and lands once per-region concurrent-stream count or backend egress make the relay hop the bottleneck. The MSE-Opus playback path the browser uses by then carries over unchanged; only the audio source flips from our backend to Google's edge.
 - **Train custom models from operational data.** Replace several LLM calls with fine-tuned models that are cheaper, faster, more consistent, and remove an external sub-processor hop. Ordered from earliest-viable (least data needed, best ROI at smaller scale) to latest:
   - **Injection detector** — viable from ~10k submissions plus a curated adversarial corpus; labels bootstrap from the Haiku guard's predictions in §6.1 plus synthetic attacks. Security value is independent of operational scale, so this can ship first.
   - **Sentiment classifier** — viable from ~20k submissions. Labels are produced for free by the post-submit Haiku call; a small encoder model retrains weekly and the per-call cost drops to ~zero.
