@@ -69,8 +69,18 @@ export default function GiveFeedback() {
   useEffect(() => {
     // Text WS for typed turns. The locale query param is consumed by
     // the backend to render the localized greeting frame; per-message
-    // locale on user_text frames keeps later turns in sync.
-    const ws = new WebSocket(wsUrl("/ws/provider", { locale: localeRef.current }));
+    // locale on user_text frames keeps later turns in sync. Passing
+    // `conversation_id` on reconnect (debug-panel network toggle, etc.)
+    // makes the backend resume the same convo row — so we don't get a
+    // duplicate greeting on top of the existing chat. convoIdRef is
+    // populated from the first `ready` frame and only cleared on a
+    // locale change (the stale-greeting refresh effect below).
+    const ws = new WebSocket(
+      wsUrl("/ws/provider", {
+        locale: localeRef.current,
+        conversation_id: convoIdRef.current ?? undefined,
+      }),
+    );
     ws.onopen = () => console.info("[provider WS] open");
     ws.onerror = (e) => console.error("[provider WS] error", e);
     ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));

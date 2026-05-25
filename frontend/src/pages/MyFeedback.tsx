@@ -46,6 +46,12 @@ export default function MyFeedback() {
   const wsRef = useRef<WebSocket | null>(null);
   const thinkingTimerRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Captured from the first `ready` frame on this WS; passed back on
+  // reconnect (debug-panel network toggle, etc.) so the backend resumes
+  // the same conversation row instead of minting a new one. State on
+  // the orchestrator side is process-memory-only in v0.1, so this
+  // only helps for the in-process-restart case; v1 makes it durable.
+  const convoIdRef = useRef<string | null>(null);
   // Same trick as GiveFeedback — keep the latest locale reachable from
   // callbacks defined in the connect effect.
   const localeRef = useRef(locale);
@@ -78,7 +84,12 @@ export default function MyFeedback() {
   }
 
   useEffect(() => {
-    const ws = new WebSocket(wsUrl("/ws/recipient", { locale: localeRef.current }));
+    const ws = new WebSocket(
+      wsUrl("/ws/recipient", {
+        locale: localeRef.current,
+        conversation_id: convoIdRef.current ?? undefined,
+      }),
+    );
     ws.onopen = () => console.info("[recipient WS] open");
     ws.onerror = (e) => console.error("[recipient WS] error", e);
     ws.onclose = (e) => {
@@ -97,6 +108,9 @@ export default function MyFeedback() {
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       switch (msg.type) {
+        case "ready":
+          convoIdRef.current = msg.conversation_id;
+          break;
         case "assistant_text_delta":
           setPartial((p) => p + msg.text);
           armThinkingTimer();
