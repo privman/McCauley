@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # One-time setup for contributors. Installs backend + frontend dev
-# dependencies and wires up the pre-push git hook. Idempotent — safe
-# to re-run after a fresh clone or after pulling new dependencies.
+# dependencies, wires up the pre-push git hook, and (on first run)
+# bootstraps ops/.env from .env.example by prompting for the secrets
+# that have no sane default. Idempotent — safe to re-run after a fresh
+# clone or after pulling new dependencies.
 
 set -e
 
@@ -30,6 +32,100 @@ echo "── frontend dev deps ────────────────�
 echo
 echo "── pre-push hook ───────────────────────────────────"
 git config core.hooksPath .githooks
+
+# ── env file ────────────────────────────────────────────
+
+ANTHROPIC_HELP="  Sign in at https://console.anthropic.com/ and go to
+  Settings → API Keys → Create Key. Copy the value (starts with 'sk-ant-')."
+
+VOYAGE_HELP="  Sign in at https://dash.voyageai.com/ and go to
+  API Keys → Create new secret key. Copy the value (starts with 'pa-')."
+
+GCP_HELP="  In Google Cloud Console: IAM & Admin → Service Accounts.
+  Create or pick a service account that has roles/speech.client and
+  roles/texttospeech.user. Open it → Keys → Add Key → Create new key
+  → JSON. Save the downloaded file somewhere on your laptop and paste
+  the absolute file path here."
+
+# Replace the line starting with KEY= in ops/.env with KEY=VALUE.
+update_env() {
+    local key="$1" val="$2" tmp
+    tmp=$(mktemp)
+    awk -v k="$key" -v v="$val" '
+        $0 ~ "^"k"=" { print k"="v; next }
+        { print }
+    ' ops/.env > "$tmp"
+    mv "$tmp" ops/.env
+}
+
+# Prompt for a secret, validating that it starts with `prefix`. The user
+# can type 'h' to print help text and be re-prompted. Loops until the
+# input is valid.
+prompt_secret() {
+    local key="$1" prefix="$2" help_text="$3" value
+    while true; do
+        echo
+        read -r -p "$key (or 'h' for help): " value
+        case "$value" in
+            h|H)
+                printf '%s\n' "$help_text"
+                ;;
+            "")
+                echo "  (empty — please enter a value, or 'h' for help)"
+                ;;
+            "$prefix"*)
+                update_env "$key" "$value"
+                echo "  ✓ saved to ops/.env"
+                return
+                ;;
+            *)
+                echo "  ✗ Expected value starting with '$prefix'. Press 'h' for help."
+                ;;
+        esac
+    done
+}
+
+# Prompt for an absolute file path. The user can type 'h' for help.
+# Leading ~ is expanded to $HOME. Loops until the path resolves to an
+# existing file.
+prompt_file() {
+    local key="$1" help_text="$2" value
+    while true; do
+        echo
+        read -r -p "$key (absolute path, or 'h' for help): " value
+        case "$value" in
+            h|H)
+                printf '%s\n' "$help_text"
+                continue
+                ;;
+            "")
+                echo "  (empty — please enter a path, or 'h' for help)"
+                continue
+                ;;
+        esac
+        value="${value/#\~/$HOME}"
+        if [ -f "$value" ]; then
+            update_env "$key" "$value"
+            echo "  ✓ saved to ops/.env"
+            return
+        fi
+        echo "  ✗ No file at: $value"
+        echo "    Press 'h' for help."
+    done
+}
+
+if [ ! -f ops/.env ]; then
+    echo
+    echo "── ops/.env ────────────────────────────────────────"
+    cp .env.example ops/.env
+    echo "  Copied .env.example → ops/.env. Now let's fill in the three"
+    echo "  secrets it needs:"
+    echo
+
+    prompt_secret "ANTHROPIC_API_KEY" "sk-ant-" "$ANTHROPIC_HELP"
+    prompt_secret "VOYAGE_API_KEY"    "pa-"     "$VOYAGE_HELP"
+    prompt_file   "GOOGLE_APPLICATION_CREDENTIALS_SOURCE" "$GCP_HELP"
+fi
 
 echo
 echo "Done."
