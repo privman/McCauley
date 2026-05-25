@@ -78,6 +78,11 @@ Rules:
   situation, behavior, or impact text.
 - For report generation use generate_report — it returns a structured
   template you should fill in.
+- For any relative time reference in the user's message ("today", "this
+  week", "the last 90 days", "recently", "since the last review") call
+  get_current_datetime FIRST and compute absolute ISO dates from the
+  returned `datetime_utc`. Do NOT rely on your training cutoff to
+  determine "now" — it will be wrong.
 """
 
 
@@ -104,6 +109,20 @@ def _parse_iso_datetime(s: str | None, *, end_of_day: bool = False) -> datetime 
 
 def _tool_defs() -> list[ToolParam]:
     return [
+        cast(
+            ToolParam,
+            {
+                "name": "get_current_datetime",
+                "description": (
+                    "Return the current UTC date and time. Call this before "
+                    "interpreting any relative time expression in the user's "
+                    "message ('today', 'this week', 'the last 90 days', "
+                    "'recently') so date_range arguments are anchored to the "
+                    "actual current date, not to your training cutoff."
+                ),
+                "input_schema": {"type": "object", "properties": {}},
+            },
+        ),
         cast(
             ToolParam,
             {
@@ -330,6 +349,13 @@ class RecipientConversation:
     async def handle_tool(
         self, session: AsyncSession, name: str, args: dict[str, Any]
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        if name == "get_current_datetime":
+            now = datetime.now(UTC)
+            return {
+                "datetime_utc": now.isoformat(),
+                "weekday": now.strftime("%A"),
+                "timezone": "UTC",
+            }, []
         if name == "resolve_entity":
             cands = await resolve_entity(
                 session,
