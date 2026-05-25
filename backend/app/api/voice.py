@@ -28,7 +28,7 @@ from app.auth import COOKIE_NAME, _user_id_from_cookie
 from app.current_user import load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
-from app.provider.orchestrator import TextDelta, TurnResult, get_or_create
+from app.provider.orchestrator import RetryStatus, TextDelta, TurnResult, get_or_create
 from app.voice import (
     TranscriptError,
     TranscriptSilence,
@@ -108,6 +108,9 @@ async def voice_ws(
     pcm_buffer = bytearray()
     tts_speed = 1.0  # user-facing multiplier; synthesize() applies the baseline
     current_locale = locale
+    # Per-utterance flag set by the frontend debug panel; resets on each
+    # `begin` so a stale toggle never carries past one turn.
+    force_stt_fail = False
     try:
         await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
@@ -133,6 +136,7 @@ async def voice_ws(
                 if isinstance(begin_locale, str):
                     current_locale = begin_locale
                     orchestrator.locale = begin_locale
+                force_stt_fail = bool(payload.get("force_stt_fail"))
                 continue
             if mtype == "set_speed":
                 try:
@@ -151,7 +155,14 @@ async def voice_ws(
 
             audio = bytes(pcm_buffer)
             pcm_buffer.clear()
-            transcript_result = await transcribe(audio, locale=current_locale)
+            transcript_result: TranscriptText | TranscriptSilence | TranscriptError
+            if force_stt_fail:
+                # Debug-panel injection: route through the real
+                # TranscriptError handler so the demo exercises the
+                # localized spoken-apology path end to end.
+                transcript_result = TranscriptError(reason="simulated mic failure (debug)")
+            else:
+                transcript_result = await transcribe(audio, locale=current_locale)
 
             if isinstance(transcript_result, TranscriptError):
                 # STT itself failed — speak a user-facing apology so the
@@ -253,6 +264,8 @@ async def voice_ws(
                             text_buffer += event.text
                             await ws.send_json({"type": "assistant_text_delta", "text": event.text})
                             _enqueue_sentences(flush_remainder=False)
+                        elif isinstance(event, RetryStatus):
+                            await ws.send_json({"type": "api_retry"})
                         else:
                             result = event
 

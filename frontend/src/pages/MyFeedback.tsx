@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useAutoScroll } from "../components/useAutoScroll";
+import { useDebug } from "../debug/DebugContext";
 import { useLocale } from "../i18n/LocaleContext";
 import type { StringKey } from "../i18n/strings";
 
@@ -38,6 +39,7 @@ const THINKING_DELAY_MS = 750;
 
 export default function MyFeedback() {
   const { locale, t } = useLocale();
+  const { networkDown } = useDebug();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
@@ -45,6 +47,9 @@ export default function MyFeedback() {
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting">(
     "connected",
   );
+  // Set true when the backend emits `api_retry`. Cleared on the next
+  // delta — stream restarting means the LLM call recovered.
+  const [apiRetrying, setApiRetrying] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -68,6 +73,8 @@ export default function MyFeedback() {
     partial,
     pending,
     showThinking,
+    connectionStatus,
+    apiRetrying,
   ]);
 
   function armThinkingTimer() {
@@ -89,12 +96,16 @@ export default function MyFeedback() {
   }
 
   useEffect(() => {
-    const ws = new WebSocket(
-      wsUrl("/ws/recipient", {
-        locale: localeRef.current,
-        conversation_id: convoIdRef.current ?? undefined,
-      }),
-    );
+    // `networkDown` points us at an unbound port so the connection
+    // genuinely fails; the real `onclose` handler drives the indicator.
+    // No special UI state for "intentional disconnect".
+    const url = networkDown
+      ? "ws://localhost:65535/ws/recipient"
+      : wsUrl("/ws/recipient", {
+          locale: localeRef.current,
+          conversation_id: convoIdRef.current ?? undefined,
+        });
+    const ws = new WebSocket(url);
     ws.onopen = () => {
       console.info("[recipient WS] open");
       setConnectionStatus("connected");
@@ -116,7 +127,13 @@ export default function MyFeedback() {
         case "ready":
           convoIdRef.current = msg.conversation_id;
           break;
+        case "api_retry":
+          // Backend's retry-on-error loop is about to back off; show
+          // the outage indicator until the stream restarts.
+          setApiRetrying(true);
+          break;
         case "assistant_text_delta":
+          setApiRetrying(false);
           setPartial((p) => p + msg.text);
           armThinkingTimer();
           break;
@@ -124,6 +141,7 @@ export default function MyFeedback() {
           clearThinkingTimer();
           setPartial("");
           setPending(false);
+          setApiRetrying(false);
           setMessages((m) => [...m, { role: "bot", text: msg.text }]);
           break;
         case "sources":
@@ -134,6 +152,7 @@ export default function MyFeedback() {
           clearThinkingTimer();
           setPartial("");
           setPending(false);
+          setApiRetrying(false);
           setMessages((m) => [
             ...m,
             { role: "system", text: `${t("give.error_prefix")} ${msg.message}` },
@@ -159,7 +178,7 @@ export default function MyFeedback() {
     // flip, and the only `t` use here is for the rare connection-lost /
     // error frames, which the user can recover from with a refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [networkDown]);
 
   function send(text: string) {
     if (!text.trim() || pending) return;
@@ -233,6 +252,16 @@ export default function MyFeedback() {
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
               {t("system.connection_retrying")}
+            </div>
+          )}
+          {/* Driven by the backend's `api_retry` frame from the real
+              retry-on-error path; cleared on the next delta. */}
+          {apiRetrying && (
+            <div
+              className="text-slate-500 text-xs italic"
+              style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+            >
+              {t("system.api_outage_retrying")}
             </div>
           )}
         </div>

@@ -3,6 +3,7 @@ import { wsUrl } from "../api";
 import { DraftPane, Stack } from "../components/DraftPane";
 import { Markdown } from "../components/Markdown";
 import { useAutoScroll } from "../components/useAutoScroll";
+import { useDebug } from "../debug/DebugContext";
 import { useLocale } from "../i18n/LocaleContext";
 import { VoiceSession } from "../voice";
 
@@ -22,15 +23,22 @@ const VOICE_SPEEDS = [0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
 
 export default function GiveFeedback() {
   const { locale, t } = useLocale();
+  const { networkDown, simulateMicFailRef } = useDebug();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
-  // "reconnecting" covers both intentional debug-panel disconnect and a
-  // real WS close; the indicator clears when the next WS open succeeds.
+  // Driven entirely by ws.onopen / ws.onclose. When `networkDown` is on
+  // we point the WS at an unbound port (see below) so the connection
+  // genuinely fails and the same onclose handler fires that would for a
+  // real outage — no special UI state for "intentional disconnect".
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting">(
     "connected",
   );
+  // Set true when the backend emits `api_retry` (orchestrator hit an
+  // anthropic.APIError and is about to back off). Cleared on the next
+  // text delta — stream restarting means the LLM call recovered.
+  const [apiRetrying, setApiRetrying] = useState(false);
   const [stack, setStack] = useState<Stack | null>(null);
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
@@ -55,6 +63,11 @@ export default function GiveFeedback() {
     partial,
     pending,
     showThinking,
+    // System indicators render inside the scroll container at the
+    // bottom of the chat; include their drivers in deps so the auto-
+    // scroll hook re-pins when they appear.
+    connectionStatus,
+    apiRetrying,
   ]);
 
   function armThinkingTimer() {
@@ -84,12 +97,23 @@ export default function GiveFeedback() {
     // existing chat. convoIdRef is populated from the first `ready`
     // frame and only cleared on a locale change (the stale-greeting
     // refresh effect below).
-    const ws = new WebSocket(
-      wsUrl("/ws/provider", {
-        locale: localeRef.current,
-        conversation_id: convoIdRef.current ?? undefined,
-      }),
-    );
+    //
+    // The debug `networkDown` toggle points us at an unbound localhost
+    // port so the connection genuinely fails — `onclose` fires, the
+    // same recovery path that drives the indicator for a real outage
+    // takes over. The toggle is never read by UI rendering directly;
+    // it only chooses the URL here.
+    if (networkDown) {
+      voiceRef.current?.disconnect();
+      voiceRef.current = null;
+    }
+    const url = networkDown
+      ? "ws://localhost:65535/ws/provider"
+      : wsUrl("/ws/provider", {
+          locale: localeRef.current,
+          conversation_id: convoIdRef.current ?? undefined,
+        });
+    const ws = new WebSocket(url);
     ws.onopen = () => {
       console.info("[provider WS] open");
       setConnectionStatus("connected");
@@ -121,14 +145,22 @@ export default function GiveFeedback() {
       ws.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [networkDown]);
 
   function handleMessage(msg: { type: string; [k: string]: unknown }): void {
     switch (msg.type) {
       case "ready":
         convoIdRef.current = msg.conversation_id as string;
         break;
+      case "api_retry":
+        // Backend's retry-on-error loop is about to back off. Show the
+        // outage indicator until the stream restarts.
+        setApiRetrying(true);
+        break;
       case "assistant_text_delta":
+        // Stream resuming means the LLM call recovered — clear the
+        // retry indicator on the first delta of the response.
+        setApiRetrying(false);
         setPartial((p) => p + (msg.text as string));
         armThinkingTimer();
         break;
@@ -136,6 +168,7 @@ export default function GiveFeedback() {
         clearThinkingTimer();
         setPartial("");
         setPending(false);
+        setApiRetrying(false);
         setMessages((m) => {
           // The first bot frame on a fresh conversation IS the
           // hardcoded greeting; tag it so a later locale change can
@@ -157,6 +190,7 @@ export default function GiveFeedback() {
         clearThinkingTimer();
         setPartial("");
         setPending(false);
+        setApiRetrying(false);
         setMessages((m) => [
           ...m,
           { role: "system", text: `${t("give.error_prefix")} ${msg.message}` },
@@ -221,10 +255,16 @@ export default function GiveFeedback() {
 
   async function ensureVoice(): Promise<VoiceSession> {
     if (voiceRef.current) return voiceRef.current;
-    const url = wsUrl("/ws/voice", {
-      conversation_id: convoIdRef.current ?? undefined,
-      locale,
-    });
+    // `networkDown` points us at an unbound port so VoiceSession's
+    // connect() promise rejects with a real connection error — same
+    // recovery path as a genuine WS outage. holdToTalkStart catches
+    // that rejection and resets the recording UI.
+    const url = networkDown
+      ? "ws://localhost:65535/ws/voice"
+      : wsUrl("/ws/voice", {
+          conversation_id: convoIdRef.current ?? undefined,
+          locale,
+        });
     const v = new VoiceSession(
       url,
       {
@@ -235,12 +275,15 @@ export default function GiveFeedback() {
         onTranscript: (raw) =>
           setMessages((m) => [...m, { role: "you", text: raw || t("give.silence") }]),
         onAssistantTextDelta: (chunk) => {
+          // Stream resuming after a retry — clear the indicator.
+          setApiRetrying(false);
           setPartial((p) => p + chunk);
           armThinkingTimer();
         },
         onAssistantText: (txt) => {
           clearThinkingTimer();
           setPartial("");
+          setApiRetrying(false);
           setMessages((m) => [...m, { role: "bot", text: txt }]);
         },
         onDraftState: (s) => setStack(s as Stack),
@@ -249,11 +292,17 @@ export default function GiveFeedback() {
         onError: (msg) => {
           clearThinkingTimer();
           setPartial("");
+          setApiRetrying(false);
           setMessages((m) => [...m, { role: "system", text: `${t("give.error_prefix")} ${msg}` }]);
         },
+        onApiRetry: () => setApiRetrying(true),
       },
       locale,
     );
+    // The voice session reads this ref every time it sends a `begin`
+    // frame, so flipping the toggle between utterances takes effect
+    // immediately without re-creating the session.
+    v.setForceSttFailRef(simulateMicFailRef);
     await v.connect();
     v.setSpeed(voiceSpeed);
     voiceRef.current = v;
@@ -278,6 +327,13 @@ export default function GiveFeedback() {
       const v = await ensureVoice();
       await v.startRecording();
       setRecording(true);
+    } catch (e) {
+      // Voice WS connect failure (simulated network-down points us at
+      // an unbound port → ws.onerror → connect() rejects) or
+      // getUserMedia denial. Either way the button reverts to idle.
+      // The connection-failed indicator in the chat surface already
+      // tells the user why if the WS is the cause.
+      console.info("[voice] start aborted:", e);
     } finally {
       // Cleared whether startup succeeded or threw — on failure the
       // button reverts to idle; on success the recording=red state
@@ -376,6 +432,17 @@ export default function GiveFeedback() {
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
               {t("system.connection_retrying")}
+            </div>
+          )}
+          {/* Driven by the backend's `api_retry` frame, which fires inside
+              the real retry-on-error loop. Cleared on the next delta or
+              final text frame when the stream recovers. */}
+          {apiRetrying && (
+            <div
+              className="text-slate-500 text-xs italic"
+              style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+            >
+              {t("system.api_outage_retrying")}
             </div>
           )}
         </div>

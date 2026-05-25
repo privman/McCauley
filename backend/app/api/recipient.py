@@ -20,6 +20,7 @@ from app.db import sessionmaker
 from app.models import Conversation, User
 from app.recipient.orchestrator import (
     RecipientTurnResult,
+    RetryStatus,
     SourcesUpdate,
     TextDelta,
     drop,
@@ -104,6 +105,8 @@ async def recipient_ws(
                             # in as tool calls complete, before the model
                             # finishes writing prose.
                             await ws.send_json({"type": "sources", "items": event.sources})
+                        elif isinstance(event, RetryStatus):
+                            await ws.send_json({"type": "api_retry"})
                         else:
                             result = event
 

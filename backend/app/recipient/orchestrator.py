@@ -7,6 +7,7 @@ applies it via app.current_user_id from the request context.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 
+import anthropic
 from anthropic.types import MessageParam, ToolParam
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -280,12 +282,20 @@ class SourcesUpdate:
 
 
 @dataclass
+class RetryStatus:
+    """Signaled when an LLM call has failed (e.g. anthropic.APIError) and
+    we're about to back off and retry. Forwarded by the WS handler as
+    an `api_retry` frame so the frontend can render the outage indicator
+    until the stream resumes."""
+
+
+@dataclass
 class RecipientTurnResult:
     assistant_text: str
     sources: list[dict[str, Any]] = field(default_factory=list)
 
 
-StreamEvent = TextDelta | SourcesUpdate | RecipientTurnResult
+StreamEvent = TextDelta | SourcesUpdate | RetryStatus | RecipientTurnResult
 
 
 @dataclass
@@ -421,31 +431,51 @@ class RecipientConversation:
             # provider orchestrator for the same fix; without it, text from
             # before/after a tool call glues together with no separator.
             round_text_started = False
-            async with sonnet_stream(
-                system=self.system_prompt(),
-                messages=self.history,
-                tools=_tool_defs(),
-                max_tokens=2048,
-            ) as stream:
-                async for event in stream:
-                    if (
-                        getattr(event, "type", None) == "content_block_delta"
-                        and getattr(event.delta, "type", None) == "text_delta"
-                    ):
-                        chunk = event.delta.text
-                        if not round_text_started and full_text_parts:
-                            sep = "\n\n"
-                            full_text_parts.append(sep)
-                            yield TextDelta(text=sep)
-                        round_text_started = True
-                        full_text_parts.append(chunk)
-                        logger.debug(
-                            "recipient convo=%s chunk_received chars=%d",
-                            self.conversation_id,
-                            len(chunk),
-                        )
-                        yield TextDelta(text=chunk)
-                final_msg = await stream.get_final_message()
+
+            # Retry-on-APIError loop. Each retry yields RetryStatus so
+            # the WS handler can surface the indicator. Backoff caps at
+            # 2s for responsive recovery.
+            backoff = 0.25
+            final_msg = None
+            while True:
+                try:
+                    async with sonnet_stream(
+                        system=self.system_prompt(),
+                        messages=self.history,
+                        tools=_tool_defs(),
+                        max_tokens=2048,
+                    ) as stream:
+                        async for event in stream:
+                            if (
+                                getattr(event, "type", None) == "content_block_delta"
+                                and getattr(event.delta, "type", None) == "text_delta"
+                            ):
+                                chunk = event.delta.text
+                                if not round_text_started and full_text_parts:
+                                    sep = "\n\n"
+                                    full_text_parts.append(sep)
+                                    yield TextDelta(text=sep)
+                                round_text_started = True
+                                full_text_parts.append(chunk)
+                                logger.debug(
+                                    "recipient convo=%s chunk_received chars=%d",
+                                    self.conversation_id,
+                                    len(chunk),
+                                )
+                                yield TextDelta(text=chunk)
+                        final_msg = await stream.get_final_message()
+                    break
+                except anthropic.APIError as e:
+                    logger.warning(
+                        "recipient convo=%s LLM call failed (%s); retrying in %.2fs",
+                        self.conversation_id,
+                        type(e).__name__,
+                        backoff,
+                    )
+                    yield RetryStatus()
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 2.0)
+            assert final_msg is not None
 
             self.history.append({"role": "assistant", "content": final_msg.content})
 

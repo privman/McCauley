@@ -11,6 +11,10 @@ export type VoiceCallbacks = {
   onSubmitted?: (feedback_id: string) => void;
   onReady?: (conversation_id: string) => void;
   onError?: (msg: string) => void;
+  // Fired when the backend's retry-on-error path is about to back off
+  // before re-attempting the LLM call. The page uses it to show the
+  // outage indicator until the next delta arrives.
+  onApiRetry?: () => void;
 };
 
 export class VoiceSession {
@@ -31,6 +35,11 @@ export class VoiceSession {
   // Tracked per-session so the locale travels with both `begin` (start
   // of a new utterance) and `set_locale` (selector flipped while idle).
   private locale: string;
+  // Optional ref pointing at the debug "simulate mic failure" toggle.
+  // When `.current` is true, the next `begin` frame asks the backend to
+  // short-circuit transcribe() into a TranscriptError so we exercise
+  // the spoken-apology path without an actual STT outage.
+  private forceSttFailRef: { readonly current: boolean } | null = null;
 
   constructor(
     private readonly wsUrl: string,
@@ -38,6 +47,10 @@ export class VoiceSession {
     locale: string = "en-US",
   ) {
     this.locale = locale;
+  }
+
+  setForceSttFailRef(ref: { readonly current: boolean }): void {
+    this.forceSttFailRef = ref;
   }
 
   async connect(): Promise<void> {
@@ -60,6 +73,9 @@ export class VoiceSession {
             // again, even if the previous turn's audio was interrupted.
             this.suppressIncomingAudio = false;
             this.cb.onTranscript?.(msg.text);
+            break;
+          case "api_retry":
+            this.cb.onApiRetry?.();
             break;
           case "assistant_text_delta":
             this.cb.onAssistantTextDelta?.(msg.text);
@@ -94,7 +110,8 @@ export class VoiceSession {
 
   async startRecording(): Promise<void> {
     if (!this.ws) throw new Error("not connected");
-    this.ws.send(JSON.stringify({ type: "begin", locale: this.locale }));
+    const force_stt_fail = this.forceSttFailRef?.current === true;
+    this.ws.send(JSON.stringify({ type: "begin", locale: this.locale, force_stt_fail }));
 
     this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     this.audioCtx = new AudioContext();

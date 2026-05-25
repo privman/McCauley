@@ -21,6 +21,7 @@ from conversation_turns. The orchestration code itself is unchanged.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -29,6 +30,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 
+import anthropic
 from anthropic.types import MessageParam, ToolParam
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -430,6 +432,14 @@ class TextDelta:
 
 
 @dataclass
+class RetryStatus:
+    """Signaled when an LLM call has failed (e.g. anthropic.APIError) and
+    we're about to back off and retry. The WS handler forwards this as
+    an `api_retry` frame so the frontend can render the "AI service
+    unavailable, retrying…" indicator until the stream resumes."""
+
+
+@dataclass
 class TurnResult:
     """Final state for a completed turn. Emitted last by step()."""
 
@@ -438,7 +448,7 @@ class TurnResult:
     submitted_feedback_ids: list[uuid.UUID] = field(default_factory=list)
 
 
-StreamEvent = TextDelta | TurnResult
+StreamEvent = TextDelta | RetryStatus | TurnResult
 
 
 @dataclass
@@ -662,30 +672,54 @@ class ProviderConversation:
             # text from this round (e.g. "Subject set to Omar Hassan.") with
             # no separator, producing "...subject.Subject set...".
             round_text_started = False
-            async with sonnet_stream(
-                system=self.system_prompt(),
-                messages=self.history,
-                tools=_tool_defs(),
-            ) as stream:
-                async for event in stream:
-                    if (
-                        getattr(event, "type", None) == "content_block_delta"
-                        and getattr(event.delta, "type", None) == "text_delta"
-                    ):
-                        chunk = event.delta.text
-                        if not round_text_started and full_text_parts:
-                            sep = "\n\n"
-                            full_text_parts.append(sep)
-                            yield TextDelta(text=sep)
-                        round_text_started = True
-                        full_text_parts.append(chunk)
-                        logger.debug(
-                            "provider convo=%s chunk_received chars=%d",
-                            self.conversation_id,
-                            len(chunk),
-                        )
-                        yield TextDelta(text=chunk)
-                final_msg = await stream.get_final_message()
+
+            # Retry the LLM call on transient upstream failures. Each
+            # retry yields a RetryStatus so the WS handler can forward
+            # the "AI service unavailable" indicator to the frontend.
+            # Backoff caps at 2s so recovery is responsive once the
+            # upstream recovers. Real anthropic.APIError lands here;
+            # future failure modes (rate-limit, simulated outage) can
+            # extend the except-clause without changing the shape.
+            backoff = 0.25
+            final_msg = None
+            while True:
+                try:
+                    async with sonnet_stream(
+                        system=self.system_prompt(),
+                        messages=self.history,
+                        tools=_tool_defs(),
+                    ) as stream:
+                        async for event in stream:
+                            if (
+                                getattr(event, "type", None) == "content_block_delta"
+                                and getattr(event.delta, "type", None) == "text_delta"
+                            ):
+                                chunk = event.delta.text
+                                if not round_text_started and full_text_parts:
+                                    sep = "\n\n"
+                                    full_text_parts.append(sep)
+                                    yield TextDelta(text=sep)
+                                round_text_started = True
+                                full_text_parts.append(chunk)
+                                logger.debug(
+                                    "provider convo=%s chunk_received chars=%d",
+                                    self.conversation_id,
+                                    len(chunk),
+                                )
+                                yield TextDelta(text=chunk)
+                        final_msg = await stream.get_final_message()
+                    break  # success — exit retry loop
+                except anthropic.APIError as e:
+                    logger.warning(
+                        "provider convo=%s LLM call failed (%s); retrying in %.2fs",
+                        self.conversation_id,
+                        type(e).__name__,
+                        backoff,
+                    )
+                    yield RetryStatus()
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 2.0)
+            assert final_msg is not None
 
             # Append assistant message in the structured shape Anthropic expects.
             self.history.append({"role": "assistant", "content": final_msg.content})

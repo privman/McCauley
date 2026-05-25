@@ -20,6 +20,7 @@ from app.current_user import UserProfile, load_current_user
 from app.db import sessionmaker
 from app.models import Conversation, User
 from app.provider.orchestrator import (
+    RetryStatus,
     TextDelta,
     TurnResult,
     drop,
@@ -130,6 +131,11 @@ async def provider_ws(
                     async for event in orchestrator.step(session, user_text):
                         if isinstance(event, TextDelta):
                             await ws.send_json({"type": "assistant_text_delta", "text": event.text})
+                        elif isinstance(event, RetryStatus):
+                            # Surfaces the real retry-on-error path to
+                            # the client. One frame per backoff before
+                            # each retry attempt.
+                            await ws.send_json({"type": "api_retry"})
                         else:
                             result = event
 

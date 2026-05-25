@@ -83,6 +83,7 @@ export const STRING_KEYS = [
   "locale.aria_label",
   // System / technical messages (italic-dim, not chat bubbles)
   "system.connection_retrying",
+  "system.api_outage_retrying",
 ] as const;
 
 export type StringKey = (typeof STRING_KEYS)[number];
@@ -162,6 +163,7 @@ const EN_US: StringTable = {
   "draft.toggle_title_default": "Toggle anonymity",
   "locale.aria_label": "Language",
   "system.connection_retrying": "connection failed, retrying…",
+  "system.api_outage_retrying": "AI service unavailable, retrying…",
 };
 
 const EN_GB: Partial<StringTable> = {
@@ -239,6 +241,7 @@ const ES_ES: Partial<StringTable> = {
   "draft.toggle_title_default": "Alternar anonimato",
   "locale.aria_label": "Idioma",
   "system.connection_retrying": "fallo de conexión, reintentando…",
+  "system.api_outage_retrying": "servicio de IA no disponible, reintentando…",
 };
 
 const ES_419: Partial<StringTable> = {
@@ -327,6 +330,7 @@ const FR_FR: Partial<StringTable> = {
   "draft.toggle_title_default": "Basculer l'anonymat",
   "locale.aria_label": "Langue",
   "system.connection_retrying": "connexion perdue, nouvelle tentative…",
+  "system.api_outage_retrying": "service IA indisponible, nouvelle tentative…",
 };
 
 const FR_CA: Partial<StringTable> = {
@@ -412,6 +416,7 @@ const DE_DE: Partial<StringTable> = {
   "draft.toggle_title_default": "Anonymität umschalten",
   "locale.aria_label": "Sprache",
   "system.connection_retrying": "Verbindung fehlgeschlagen, neuer Versuch…",
+  "system.api_outage_retrying": "KI-Dienst nicht verfügbar, neuer Versuch…",
 };
 
 const TABLES: Record<LocaleCode, StringTable> = {

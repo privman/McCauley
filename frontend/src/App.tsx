@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { api, User } from "./api";
+import { DebugPanel } from "./components/DebugPanel";
 import { LocaleSelector } from "./components/LocaleSelector";
 import { useLocale } from "./i18n/LocaleContext";
 import Login from "./pages/Login";
@@ -23,9 +24,12 @@ export default function App() {
 
   if (user === null) {
     return (
-      <Routes>
-        <Route path="*" element={<Login onLogin={setUser} />} />
-      </Routes>
+      <>
+        <Routes>
+          <Route path="*" element={<Login onLogin={setUser} />} />
+        </Routes>
+        <DebugPanel />
+      </>
     );
   }
 
@@ -66,6 +70,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/give-feedback" replace />} />
         </Routes>
       </main>
+      <DebugPanel />
     </div>
   );
 }
