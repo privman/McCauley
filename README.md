@@ -69,7 +69,9 @@ Then open [http://localhost:5173](http://localhost:5173). You'll see the user-pi
 9. **Generate a report** with the button.
 10. **Sign in as Priya** to confirm she sees feedback about herself but not her peers.
 
-## Required env vars
+## Env vars
+
+### Required
 
 - `ANTHROPIC_API_KEY` — Claude API (Sonnet 4.6 + Haiku 4.5).
 - `VOYAGE_API_KEY` — `voyage-3-large` for feedback embeddings.
@@ -77,6 +79,9 @@ Then open [http://localhost:5173](http://localhost:5173). You'll see the user-pi
 service-account JSON. Needs `roles/speech.client` and `roles/texttospeech.user`. If unset,
 the compose file mounts `/dev/null` and voice STT/TTS will fail at the Google API call —
 everything else still runs.
+
+### Optional
+
 - `GOOGLE_APPLICATION_CREDENTIALS_MOUNT_POINT` — path **inside the container** where the JSON
 appears. Compose sets the standard `GOOGLE_APPLICATION_CREDENTIALS` env var (the one Google
 client libraries read) from this value. Default `/run/secrets/google-credentials.json` is
@@ -86,6 +91,7 @@ usually fine.
 users exist and the port isn't exposed beyond `localhost`; change it before exposing the
 instance over the network or seeding real users.
 - `POSTGRES_URL` — already wired by compose; override only if you point at an external DB.
+- `LOG_LEVEL` - see next section.
 
 ## Logging
 
