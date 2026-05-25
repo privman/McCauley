@@ -128,30 +128,117 @@ Rules:
   get_current_datetime FIRST and compute an absolute ISO date from the
   returned `datetime_utc` before writing `occurred_at` via update_sbi.
   Do NOT rely on your training cutoff to determine "now."
+- Respond in {language_label}. The user may still write in another
+  language — if so, mirror their language for that turn. Field values
+  written via tools (subject, headline, situation, behavior, impact)
+  should preserve the user's own wording in whatever language they used.
 
 {skill_index}
 """
 
 
-def greeting(profile: UserProfile) -> str:
-    """First-message greeting rendered without an LLM call.
-
-    Pushed to the client at WS connect so the user sees something
-    immediately while composing their first message. The model never
-    sees this — it's purely UI. Open-ended (who, not what about) to
-    match the system prompt's subject → headline → SBI capture order.
-    """
-    first_name = profile.name.split()[0] if profile.name else "there"
-    return (
-        f"Hi {first_name}, great to have you here! I'm McCauley — "
+# One template per supported locale. `{name}` is the user's first
+# name (or a generic stand-in for the unnamed case). Kept here next to
+# the system prompt because the greeting reflects the same conversational
+# stance — open-ended, who-not-what-about, anonymity disclosure up front.
+_GREETING_TEMPLATES: dict[str, tuple[str, str]] = {
+    # (template, generic_name_when_profile_has_no_name)
+    "en-US": (
+        "Hi {name}, great to have you here! I'm McCauley — "
         "I'll help you shape your feedback so it lands clearly and is genuinely useful "
         "for the recipient.\n\n"
         "A quick note: your name will be attached to whatever we capture (unless you choose "
         "to provide it anonymously), so the recipient and their management chain will know "
         "it's from you. Let me know if you prefer to be anonymous.\n\n"
         "I'll ask a few questions along the way to help structure things well.\n\n"
-        "What's on your mind — who would you like to share feedback about?"
-    )
+        "What's on your mind — who would you like to share feedback about?",
+        "there",
+    ),
+    "en-GB": (
+        "Hi {name}, lovely to have you here! I'm McCauley — "
+        "I'll help you shape your feedback so it lands clearly and is genuinely useful "
+        "for the recipient.\n\n"
+        "A quick note: your name will be attached to whatever we capture (unless you choose "
+        "to share it anonymously), so the recipient and their management chain will know "
+        "it's from you. Let me know if you'd prefer to be anonymous.\n\n"
+        "I'll ask a few questions along the way to help structure things well.\n\n"
+        "What's on your mind — who would you like to share feedback about?",
+        "there",
+    ),
+    "es-ES": (
+        "Hola {name}, ¡me alegra que estés aquí! Soy McCauley — "
+        "te ayudaré a dar forma a tus comentarios para que se entiendan con claridad y "
+        "resulten genuinamente útiles para quien los recibe.\n\n"
+        "Un apunte rápido: tu nombre quedará asociado a lo que capturemos (a menos que "
+        "elijas enviarlo de forma anónima), así que la persona destinataria y su línea de "
+        "mando sabrán que vienen de ti. Dímelo si prefieres permanecer en el anonimato.\n\n"
+        "Te haré algunas preguntas por el camino para ayudarte a estructurar bien las ideas.\n\n"
+        "¿En qué estás pensando? ¿Sobre quién te gustaría dar feedback?",
+        "hola",
+    ),
+    "es-419": (
+        "¡Hola {name}, qué bueno tenerte por aquí! Soy McCauley — "
+        "te voy a ayudar a darle forma a tu feedback para que se entienda claro y le sirva "
+        "de verdad a la persona que lo recibe.\n\n"
+        "Un detalle: tu nombre va a quedar asociado a lo que registremos (a menos que "
+        "elijas enviarlo anónimamente), así que quien lo reciba y su cadena de mando van a "
+        "saber que viene de ti. Avísame si prefieres ir en anónimo.\n\n"
+        "Te voy a hacer algunas preguntas en el camino para ayudarte a ordenar las ideas.\n\n"
+        "¿Qué tienes en mente? ¿Sobre quién quieres dar feedback?",
+        "hola",
+    ),
+    "fr-FR": (
+        "Bonjour {name}, ravi de vous accueillir ! Je suis McCauley — "
+        "je vais vous aider à structurer vos retours pour qu'ils soient clairs et "
+        "véritablement utiles à leur destinataire.\n\n"
+        "Une précision : votre nom sera associé à tout ce que nous saisirons (sauf si vous "
+        "choisissez l'anonymat), donc le destinataire et sa chaîne hiérarchique sauront "
+        "qu'ils viennent de vous. Dites-le-moi si vous préférez rester anonyme.\n\n"
+        "Je vous poserai quelques questions au fil de l'échange pour bien structurer le tout.\n\n"
+        "Qu'avez-vous en tête — sur qui souhaitez-vous partager un retour ?",
+        "bonjour",
+    ),
+    "fr-CA": (
+        "Bonjour {name}, content de te voir ici ! Je suis McCauley — "
+        "je vais t'aider à mettre en forme ton feedback pour qu'il soit clair et vraiment "
+        "utile pour la personne qui le reçoit.\n\n"
+        "Petite note : ton nom va être associé à ce qu'on capture (à moins que tu choisisses "
+        "de le soumettre de façon anonyme), donc la personne et sa chaîne de gestion vont "
+        "savoir que ça vient de toi. Dis-moi si tu préfères rester anonyme.\n\n"
+        "Je vais te poser quelques questions en chemin pour bien structurer le tout.\n\n"
+        "Qu'est-ce que tu as en tête — à propos de qui veux-tu partager du feedback ?",
+        "bonjour",
+    ),
+    "de-DE": (
+        "Hallo {name}, schön, dass du da bist! Ich bin McCauley — "
+        "ich helfe dir, dein Feedback so zu formulieren, dass es klar ankommt und für die "
+        "empfangende Person wirklich hilfreich ist.\n\n"
+        "Ein kurzer Hinweis: Dein Name wird mit dem, was wir erfassen, verknüpft (außer du "
+        "entscheidest dich für anonymes Feedback), die empfangende Person und ihre "
+        "Führungslinie werden also wissen, dass es von dir kommt. Sag Bescheid, wenn du "
+        "lieber anonym bleiben möchtest.\n\n"
+        "Ich stelle dir unterwegs ein paar Fragen, damit wir das Ganze gut strukturieren.\n\n"
+        "Was beschäftigt dich — über wen möchtest du Feedback geben?",
+        "hallo",
+    ),
+}
+
+
+def greeting(profile: UserProfile, locale: str = "en-US") -> str:
+    """First-message greeting rendered without an LLM call.
+
+    Pushed to the client at WS connect so the user sees something
+    immediately while composing their first message. The model never
+    sees this — it's purely UI. Open-ended (who, not what about) to
+    match the system prompt's subject → headline → SBI capture order.
+
+    `locale` picks the localized template; unknown codes fall back to
+    en-US silently rather than throwing — a typoed locale shouldn't
+    block the whole conversation from starting.
+    """
+    template, fallback_name = _GREETING_TEMPLATES.get(locale, _GREETING_TEMPLATES["en-US"])
+    first_name = profile.name.split()[0] if profile.name else fallback_name
+    return template.format(name=first_name)
 
 
 def _tool_defs() -> list[ToolParam]:
@@ -362,13 +449,18 @@ class ProviderConversation:
     user_id: uuid.UUID
     org_id: uuid.UUID
     current_user: UserProfile
+    locale: str = "en-US"
     stack: DraftStack = field(default_factory=DraftStack)
     history: list[MessageParam] = field(default_factory=list)
 
     def system_prompt(self) -> str:
+        from app.locales import resolve as resolve_locale
+
+        loc = resolve_locale(self.locale)
         return SYSTEM_PROMPT.format(
             current_user_block=self.current_user.prompt_block(),
             skill_index=skill_index_for_prompt(),
+            language_label=loc.variant_label,
         )
 
     async def handle_tool(
@@ -653,6 +745,7 @@ def get_or_create(
     user_id: uuid.UUID,
     org_id: uuid.UUID,
     current_user: UserProfile,
+    locale: str = "en-US",
 ) -> ProviderConversation:
     convo = _active.get(conversation_id)
     if convo is None:
@@ -661,8 +754,14 @@ def get_or_create(
             user_id=user_id,
             org_id=org_id,
             current_user=current_user,
+            locale=locale,
         )
         _active[conversation_id] = convo
+    else:
+        # An existing conversation might be resumed with a different locale
+        # if the user toggled the selector mid-session. Update so subsequent
+        # turns use the new language.
+        convo.locale = locale
     return convo
 
 

@@ -1,4 +1,5 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
+import { useLocale } from "../i18n/LocaleContext";
 
 type Subject = { kind: string; id: string | null; name: string | null };
 type SBI = {
@@ -33,6 +34,7 @@ export function DraftPane({
   onSubmit: (local_id: string) => void;
   disabled?: boolean;
 }) {
+  const { t } = useLocale();
   // Hide drafts the user hasn't put any real content into yet — those are
   // just unused workspaces, not real items worth displaying.
   const current = stack && stack.current && !stack.current.is_empty ? stack.current : null;
@@ -40,13 +42,13 @@ export function DraftPane({
   const hasAnyDraft = current !== null || paused.length > 0;
 
   if (!hasAnyDraft) {
-    return <div className="text-sm text-slate-400">No drafts yet — start talking.</div>;
+    return <div className="text-sm text-slate-400">{t("draft.empty_hint")}</div>;
   }
   return (
     <div className="space-y-6">
       <section>
         <h3 className="text-xs uppercase font-medium text-slate-500 mb-2">
-          Drafts in this session
+          {t("draft.session_heading")}
         </h3>
         <ul className="space-y-1">
           {current && (
@@ -64,7 +66,7 @@ export function DraftPane({
       {current && (
         <section>
           <h3 className="text-xs uppercase font-medium text-slate-500 mb-2">
-            Current draft ({current.local_id})
+            {t("draft.current_heading")} ({current.local_id})
           </h3>
           <DraftDetail
             draft={current}
@@ -117,14 +119,16 @@ function DraftDetail({
   onSubmit: (local_id: string) => void;
   disabled?: boolean;
 }) {
+  const { t } = useLocale();
+  const dash = t("draft.dash");
   return (
     <div className="text-sm space-y-4">
       <KVGrid
         rows={[
-          ["Subject", draft.subject?.name ?? "—"],
-          ["Point", draft.headline ?? "—"],
+          [t("draft.subject"), draft.subject?.name ?? dash],
+          [t("draft.headline"), draft.headline ?? dash],
           [
-            "Anonymous",
+            t("draft.anonymous"),
             <AnonymousToggle
               key="anon"
               value={draft.is_anonymous}
@@ -135,20 +139,25 @@ function DraftDetail({
         ]}
       />
       <div>
-        <div className="text-xs uppercase font-medium text-slate-500 mb-2">Examples</div>
-        {draft.sbis.length === 0 && <div className="text-slate-400">none yet</div>}
+        <div className="text-xs uppercase font-medium text-slate-500 mb-2">
+          {t("draft.examples_heading")}
+        </div>
+        {draft.sbis.length === 0 && (
+          <div className="text-slate-400">{t("draft.examples_empty")}</div>
+        )}
         <ul className="space-y-2">
           {draft.sbis.map((s) => (
             <li key={s.idx} className="border border-slate-200 rounded p-2 space-y-2">
               <div className="font-medium text-slate-700 text-xs">
-                #{s.idx + 1} {s.complete ? "● complete" : "… in progress"}
+                #{s.idx + 1}{" "}
+                {s.complete ? t("draft.example_complete") : t("draft.example_in_progress")}
               </div>
               <KVGrid
                 small
                 rows={[
-                  ["S", s.situation ?? "—"],
-                  ["B", s.behavior ?? "—"],
-                  ["I", s.impact ?? "—"],
+                  ["S", s.situation ?? dash],
+                  ["B", s.behavior ?? dash],
+                  ["I", s.impact ?? dash],
                 ]}
               />
             </li>
@@ -162,7 +171,7 @@ function DraftDetail({
           disabled={disabled}
           className="flex-1 px-3 py-1.5 text-xs rounded border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          + Add example
+          {t("draft.add_example")}
         </button>
         <button
           type="button"
@@ -170,7 +179,7 @@ function DraftDetail({
           disabled={disabled}
           className="flex-1 px-3 py-1.5 text-xs rounded bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Submit
+          {t("draft.submit")}
         </button>
       </div>
     </div>
@@ -203,6 +212,7 @@ function AnonymousToggle({
   disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
+  const { t } = useLocale();
   // Optimistic state so the toggle flips immediately on click instead of
   // waiting for the agent to round-trip a draft_state update.
   const [optimistic, setOptimistic] = useState(value);
@@ -237,7 +247,7 @@ function AnonymousToggle({
       aria-checked={optimistic}
       disabled={disabled}
       onClick={handleClick}
-      title={disabled ? "Wait for the agent to finish" : "Toggle anonymity"}
+      title={disabled ? t("draft.toggle_title_busy") : t("draft.toggle_title_default")}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
         optimistic ? "bg-emerald-500" : "bg-slate-300"
       }`}

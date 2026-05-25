@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { api, User } from "./api";
+import { LocaleSelector } from "./components/LocaleSelector";
+import { useLocale } from "./i18n/LocaleContext";
 import Login from "./pages/Login";
 import GiveFeedback from "./pages/GiveFeedback";
 import MyFeedback from "./pages/MyFeedback";
@@ -8,6 +10,7 @@ import MyFeedback from "./pages/MyFeedback";
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const navigate = useNavigate();
+  const { t } = useLocale();
 
   useEffect(() => {
     api
@@ -16,7 +19,7 @@ export default function App() {
       .catch(() => setUser(null));
   }, []);
 
-  if (user === undefined) return <div className="p-8 text-slate-500">loading…</div>;
+  if (user === undefined) return <div className="p-8 text-slate-500">{t("app.loading")}</div>;
 
   if (user === null) {
     return (
@@ -39,10 +42,10 @@ export default function App() {
           <h1 className="font-semibold text-slate-800">McCauley</h1>
           <nav className="flex gap-4 text-sm">
             <Link to="/give-feedback" className="text-slate-700 hover:text-slate-900">
-              Give feedback
+              {t("nav.give_feedback")}
             </Link>
             <Link to="/my-feedback" className="text-slate-700 hover:text-slate-900">
-              Review feedback
+              {t("nav.review_feedback")}
             </Link>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
@@ -50,8 +53,9 @@ export default function App() {
               {user.name} <span className="text-slate-400">· {user.title}</span>
             </span>
             <button onClick={logout} className="text-slate-500 hover:text-slate-800">
-              Sign out
+              {t("app.sign_out")}
             </button>
+            <LocaleSelector />
           </div>
         </div>
       </header>

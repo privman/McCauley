@@ -56,6 +56,7 @@ async def _set_pg_user(session: AsyncSession, user_id: uuid.UUID) -> None:
 async def provider_ws(
     ws: WebSocket,
     conversation_id: str | None = Query(default=None),
+    locale: str = Query(default="en-US"),
     cookie: str | None = Cookie(default=None, alias=COOKIE_NAME),
 ) -> None:
     await ws.accept()
@@ -81,7 +82,11 @@ async def provider_ws(
             convo_id = convo.id
 
     orchestrator = get_or_create(
-        convo_id, user_id=user_id, org_id=org_id, current_user=current_user
+        convo_id,
+        user_id=user_id,
+        org_id=org_id,
+        current_user=current_user,
+        locale=locale,
     )
 
     is_new_conversation = conversation_id is None
@@ -91,7 +96,9 @@ async def provider_ws(
         if is_new_conversation:
             # Deterministic greeting — no LLM call, no model history entry.
             # Just gives the user something to read on connect.
-            await ws.send_json({"type": "assistant_text", "text": greeting(current_user)})
+            await ws.send_json(
+                {"type": "assistant_text", "text": greeting(current_user, orchestrator.locale)}
+            )
         while True:
             raw = await ws.receive_text()
             try:
@@ -103,6 +110,11 @@ async def provider_ws(
             if mtype != "user_text":
                 await ws.send_json({"type": "error", "message": f"unknown type {mtype}"})
                 continue
+            # Per-message locale lets the selector update take effect on
+            # the next turn without reconnecting.
+            msg_locale = msg.get("locale")
+            if isinstance(msg_locale, str):
+                orchestrator.locale = msg_locale
             user_text = msg.get("text", "")
             logger.info(
                 "provider convo=%s user=%s user_message chars=%d",

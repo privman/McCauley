@@ -34,8 +34,15 @@ export const api = {
   me: () => req<User>("/auth/me"),
 };
 
-export function wsUrl(path: string): string {
+export function wsUrl(path: string, params?: Record<string, string | undefined>): string {
   const proto = BACKEND.startsWith("https") ? "wss" : "ws";
   const host = BACKEND.replace(/^https?:\/\//, "");
-  return `${proto}://${host}${path}`;
+  const url = `${proto}://${host}${path}`;
+  if (!params) return url;
+  const query = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") query.set(k, v);
+  }
+  const qs = query.toString();
+  return qs ? `${url}?${qs}` : url;
 }

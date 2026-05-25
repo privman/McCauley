@@ -28,11 +28,17 @@ export class VoiceSession {
   // we interrupted) get dropped instead of played.
   private suppressIncomingAudio = false;
   private conversationId: string | null = null;
+  // Tracked per-session so the locale travels with both `begin` (start
+  // of a new utterance) and `set_locale` (selector flipped while idle).
+  private locale: string;
 
   constructor(
     private readonly wsUrl: string,
     private readonly cb: VoiceCallbacks,
-  ) {}
+    locale: string = "en-US",
+  ) {
+    this.locale = locale;
+  }
 
   async connect(): Promise<void> {
     this.ws = new WebSocket(this.wsUrl);
@@ -88,7 +94,7 @@ export class VoiceSession {
 
   async startRecording(): Promise<void> {
     if (!this.ws) throw new Error("not connected");
-    this.ws.send(JSON.stringify({ type: "begin" }));
+    this.ws.send(JSON.stringify({ type: "begin", locale: this.locale }));
 
     this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     this.audioCtx = new AudioContext();
@@ -140,6 +146,13 @@ export class VoiceSession {
     // connect, so dropping pre-open changes is fine.
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: "set_speed", speed }));
+    }
+  }
+
+  setLocale(locale: string): void {
+    this.locale = locale;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "set_locale", locale }));
     }
   }
 

@@ -3,9 +3,12 @@ import { wsUrl } from "../api";
 import { DraftPane, Stack } from "../components/DraftPane";
 import { Markdown } from "../components/Markdown";
 import { useAutoScroll } from "../components/useAutoScroll";
+import { useLocale } from "../i18n/LocaleContext";
 import { VoiceSession } from "../voice";
 
-type Msg = { role: "you" | "bot"; text: string };
+// `isGreeting` flags the auto-greeting so we can replace it when the
+// locale changes — but only as long as it's still the only message.
+type Msg = { role: "you" | "bot"; text: string; isGreeting?: boolean };
 
 const THINKING_DELAY_MS = 750;
 
@@ -14,6 +17,7 @@ const THINKING_DELAY_MS = 750;
 const VOICE_SPEEDS = [0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
 
 export default function GiveFeedback() {
+  const { locale, t } = useLocale();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
@@ -30,6 +34,13 @@ export default function GiveFeedback() {
   const voicePressStartRef = useRef<number | null>(null);
   const thinkingTimerRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Latest locale, captured for callbacks that close over stale state
+  // (the WS onmessage / onclose handlers, mostly). Updated via the
+  // effect below.
+  const localeRef = useRef(locale);
+  useEffect(() => {
+    localeRef.current = locale;
+  }, [locale]);
   const { ref: scrollRef, stickToBottom } = useAutoScroll<HTMLDivElement>([
     messages,
     partial,
@@ -56,8 +67,10 @@ export default function GiveFeedback() {
   }
 
   useEffect(() => {
-    // Text WS for typed turns.
-    const ws = new WebSocket(wsUrl("/ws/provider"));
+    // Text WS for typed turns. The locale query param is consumed by
+    // the backend to render the localized greeting frame; per-message
+    // locale on user_text frames keeps later turns in sync.
+    const ws = new WebSocket(wsUrl("/ws/provider", { locale: localeRef.current }));
     ws.onopen = () => console.info("[provider WS] open");
     ws.onerror = (e) => console.error("[provider WS] error", e);
     ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
@@ -68,10 +81,7 @@ export default function GiveFeedback() {
         if (wasPending) {
           clearThinkingTimer();
           setPartial("");
-          setMessages((m) => [
-            ...m,
-            { role: "bot", text: "(connection lost — refresh to reconnect)" },
-          ]);
+          setMessages((m) => [...m, { role: "bot", text: t("give.connection_lost") }]);
         }
         return false;
       });
@@ -105,7 +115,13 @@ export default function GiveFeedback() {
         clearThinkingTimer();
         setPartial("");
         setPending(false);
-        setMessages((m) => [...m, { role: "bot", text: msg.text as string }]);
+        setMessages((m) => {
+          // The first bot frame on a fresh conversation IS the
+          // hardcoded greeting; tag it so a later locale change can
+          // replace it if the user hasn't typed yet.
+          const isGreeting = m.length === 0;
+          return [...m, { role: "bot", text: msg.text as string, isGreeting }];
+        });
         break;
       case "draft_state":
         setStack(msg.stack as Stack);
@@ -113,24 +129,58 @@ export default function GiveFeedback() {
       case "submitted":
         setMessages((m) => [
           ...m,
-          { role: "bot", text: `✓ Submitted feedback ${msg.feedback_id}` },
+          { role: "bot", text: `${t("give.submitted")} ${msg.feedback_id}` },
         ]);
         break;
       case "error":
         clearThinkingTimer();
         setPartial("");
         setPending(false);
-        setMessages((m) => [...m, { role: "bot", text: `(error) ${msg.message}` }]);
+        setMessages((m) => [
+          ...m,
+          { role: "bot", text: `${t("give.error_prefix")} ${msg.message}` },
+        ]);
         break;
     }
   }
+
+  // Stale-greeting refresh: if the locale changes while the auto-greeting
+  // is still the only message, ask the backend to re-send a localized
+  // greeting. Once the user has typed anything, leave the original
+  // greeting alone (replacing it mid-conversation would feel weird).
+  useEffect(() => {
+    if (messages.length !== 1) return;
+    if (!messages[0].isGreeting) return;
+    // Reopen the WS with the new locale. The backend treats a connect
+    // without `conversation_id` as a new conversation and sends a fresh
+    // greeting frame in the new language. The next `assistant_text`
+    // frame will replace the stale one in our state.
+    const ws = textWsRef.current;
+    if (!ws) return;
+    setMessages([]);
+    convoIdRef.current = null;
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.onmessage = null;
+    ws.close();
+    const next = new WebSocket(wsUrl("/ws/provider", { locale }));
+    next.onopen = () => console.info("[provider WS] reopen for locale change");
+    next.onerror = (e) => console.error("[provider WS] error", e);
+    next.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
+    next.onclose = (e) => {
+      console.info("[provider WS] close", e.code, e.reason);
+      textWsRef.current = null;
+    };
+    textWsRef.current = next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
 
   async function send(text: string) {
     if (!text.trim() || pending) return;
     const ws = textWsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.warn("[provider WS] send while not OPEN", ws?.readyState);
-      setMessages((m) => [...m, { role: "bot", text: "(not connected — refresh the page)" }]);
+      setMessages((m) => [...m, { role: "bot", text: t("give.not_connected") }]);
       return;
     }
     // Any new user message — typed, button-synthesized, or otherwise —
@@ -142,43 +192,57 @@ export default function GiveFeedback() {
     setPending(true);
     stickToBottom();
     armThinkingTimer();
-    ws.send(JSON.stringify({ type: "user_text", text }));
+    ws.send(JSON.stringify({ type: "user_text", text, locale }));
     inputRef.current?.focus();
   }
 
   async function ensureVoice(): Promise<VoiceSession> {
     if (voiceRef.current) return voiceRef.current;
-    const url =
-      wsUrl("/ws/voice") + (convoIdRef.current ? `?conversation_id=${convoIdRef.current}` : "");
-    const v = new VoiceSession(url, {
-      onReady: (id) => {
-        convoIdRef.current = id;
-        setVoiceReady(true);
-      },
-      onTranscript: (t) => setMessages((m) => [...m, { role: "you", text: t || "(silence)" }]),
-      onAssistantTextDelta: (chunk) => {
-        setPartial((p) => p + chunk);
-        armThinkingTimer();
-      },
-      onAssistantText: (t) => {
-        clearThinkingTimer();
-        setPartial("");
-        setMessages((m) => [...m, { role: "bot", text: t }]);
-      },
-      onDraftState: (s) => setStack(s as Stack),
-      onSubmitted: (id) =>
-        setMessages((m) => [...m, { role: "bot", text: `✓ Submitted feedback ${id}` }]),
-      onError: (msg) => {
-        clearThinkingTimer();
-        setPartial("");
-        setMessages((m) => [...m, { role: "bot", text: `(error) ${msg}` }]);
-      },
+    const url = wsUrl("/ws/voice", {
+      conversation_id: convoIdRef.current ?? undefined,
+      locale,
     });
+    const v = new VoiceSession(
+      url,
+      {
+        onReady: (id) => {
+          convoIdRef.current = id;
+          setVoiceReady(true);
+        },
+        onTranscript: (raw) =>
+          setMessages((m) => [...m, { role: "you", text: raw || t("give.silence") }]),
+        onAssistantTextDelta: (chunk) => {
+          setPartial((p) => p + chunk);
+          armThinkingTimer();
+        },
+        onAssistantText: (txt) => {
+          clearThinkingTimer();
+          setPartial("");
+          setMessages((m) => [...m, { role: "bot", text: txt }]);
+        },
+        onDraftState: (s) => setStack(s as Stack),
+        onSubmitted: (id) =>
+          setMessages((m) => [...m, { role: "bot", text: `${t("give.submitted")} ${id}` }]),
+        onError: (msg) => {
+          clearThinkingTimer();
+          setPartial("");
+          setMessages((m) => [...m, { role: "bot", text: `${t("give.error_prefix")} ${msg}` }]);
+        },
+      },
+      locale,
+    );
     await v.connect();
     v.setSpeed(voiceSpeed);
     voiceRef.current = v;
     return v;
   }
+
+  // Propagate locale flips to an already-open voice session so the next
+  // `begin` frame carries the right code (and the agent's reply comes
+  // back in the new language and voice).
+  useEffect(() => {
+    voiceRef.current?.setLocale(locale);
+  }, [locale]);
 
   function changeVoiceSpeed(speed: number) {
     setVoiceSpeed(speed);
@@ -243,10 +307,7 @@ export default function GiveFeedback() {
       <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
-            <div className="text-slate-400 text-sm">
-              Hi! Tell me about feedback you'd like to share. You can talk (hold the mic) or type
-              below.
-            </div>
+            <div className="text-slate-400 text-sm">{t("give.empty_hint")}</div>
           )}
           {messages.map((m, i) => (
             <div
@@ -270,7 +331,7 @@ export default function GiveFeedback() {
               className="text-slate-500 text-xs italic"
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
-              thinking…
+              {t("give.thinking")}
             </div>
           )}
         </div>
@@ -287,15 +348,15 @@ export default function GiveFeedback() {
               }
             }}
             rows={3}
-            placeholder="Type a message…"
+            placeholder={t("give.placeholder")}
             className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm resize-none overflow-y-auto"
           />
           <div className="flex flex-col gap-1.5">
             <select
               value={voiceSpeed}
               onChange={(e) => changeVoiceSpeed(Number(e.target.value))}
-              aria-label="Voice playback speed"
-              title="Voice playback speed"
+              aria-label={t("give.voice_speed_label")}
+              title={t("give.voice_speed_label")}
               className="w-14 h-7 px-1 border border-slate-300 rounded text-xs text-slate-700 bg-white hover:bg-slate-50"
             >
               {VOICE_SPEEDS.map((s) => (
@@ -317,13 +378,19 @@ export default function GiveFeedback() {
                     ? "bg-slate-50 border-slate-300 text-slate-500"
                     : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
               }`}
-              aria-label={voiceStarting ? "Starting mic" : recording ? "Stop recording" : "Voice"}
+              aria-label={
+                voiceStarting
+                  ? t("give.voice_aria_starting")
+                  : recording
+                    ? t("give.voice_aria_stop")
+                    : t("give.voice_aria_default")
+              }
               title={
                 voiceStarting
-                  ? "Starting…"
+                  ? t("give.voice_title_starting")
                   : recording
-                    ? "Stop recording"
-                    : "Click to toggle or hold"
+                    ? t("give.voice_title_stop")
+                    : t("give.voice_title_default")
               }
             >
               {voiceStarting ? (
@@ -340,8 +407,8 @@ export default function GiveFeedback() {
             <button
               onClick={() => void send(draft)}
               disabled={pending}
-              aria-label="Send"
-              title="Send"
+              aria-label={t("give.send")}
+              title={t("give.send")}
               className="w-14 h-7 flex items-center justify-center bg-slate-800 text-white rounded text-sm hover:bg-slate-700 disabled:opacity-50"
             >
               ↑
@@ -353,10 +420,12 @@ export default function GiveFeedback() {
         <DraftPane
           stack={stack}
           disabled={pending}
-          onPick={(id) => void send(`Let's go back to draft ${id}.`)}
-          onToggleAnonymous={(_id, value) => void send(`Anonymity turned ${value ? "on" : "off"}.`)}
-          onAddExample={() => void send("I'd like to add another example.")}
-          onSubmit={() => void send("Let's submit this feedback record.")}
+          onPick={(id) => void send(`${t("give.resume_message")} ${id}.`)}
+          onToggleAnonymous={(_id, value) =>
+            void send(value ? t("give.anonymity_on") : t("give.anonymity_off"))
+          }
+          onAddExample={() => void send(t("give.add_example_message"))}
+          onSubmit={() => void send(t("give.submit_message"))}
         />
       </aside>
     </div>

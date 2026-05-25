@@ -49,3 +49,5 @@ jobs:
         run: npm run lint
       - name: TypeScript
         run: npm run typecheck
+      - name: Vitest
+        run: npm run test

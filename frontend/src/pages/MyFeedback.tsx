@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useAutoScroll } from "../components/useAutoScroll";
+import { useLocale } from "../i18n/LocaleContext";
+import type { StringKey } from "../i18n/strings";
 
 type Msg = { role: "you" | "bot"; text: string };
 type SBI = {
@@ -23,16 +25,17 @@ type Source = {
   sbis: SBI[];
 };
 
-const EXAMPLE_PROMPTS = [
-  "What feedback came in about my reports this month?",
-  "Summarise feedback about Priya.",
-  "Generate a report on the Mobile team in Q1.",
-  "What are the top themes in feedback about delivery?",
+const EXAMPLE_PROMPT_KEYS: StringKey[] = [
+  "my.example_prompt_1",
+  "my.example_prompt_2",
+  "my.example_prompt_3",
+  "my.example_prompt_4",
 ];
 
 const THINKING_DELAY_MS = 750;
 
 export default function MyFeedback() {
+  const { locale, t } = useLocale();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
@@ -43,6 +46,12 @@ export default function MyFeedback() {
   const wsRef = useRef<WebSocket | null>(null);
   const thinkingTimerRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Same trick as GiveFeedback — keep the latest locale reachable from
+  // callbacks defined in the connect effect.
+  const localeRef = useRef(locale);
+  useEffect(() => {
+    localeRef.current = locale;
+  }, [locale]);
   const { ref: scrollRef, stickToBottom } = useAutoScroll<HTMLDivElement>([
     messages,
     partial,
@@ -69,7 +78,7 @@ export default function MyFeedback() {
   }
 
   useEffect(() => {
-    const ws = new WebSocket(wsUrl("/ws/recipient"));
+    const ws = new WebSocket(wsUrl("/ws/recipient", { locale: localeRef.current }));
     ws.onopen = () => console.info("[recipient WS] open");
     ws.onerror = (e) => console.error("[recipient WS] error", e);
     ws.onclose = (e) => {
@@ -80,10 +89,7 @@ export default function MyFeedback() {
         if (wasPending) {
           clearThinkingTimer();
           setPartial("");
-          setMessages((m) => [
-            ...m,
-            { role: "bot", text: "(connection lost — refresh to reconnect)" },
-          ]);
+          setMessages((m) => [...m, { role: "bot", text: t("give.connection_lost") }]);
         }
         return false;
       });
@@ -109,7 +115,10 @@ export default function MyFeedback() {
           clearThinkingTimer();
           setPartial("");
           setPending(false);
-          setMessages((m) => [...m, { role: "bot", text: `(error) ${msg.message}` }]);
+          setMessages((m) => [
+            ...m,
+            { role: "bot", text: `${t("give.error_prefix")} ${msg.message}` },
+          ]);
           break;
       }
     };
@@ -126,6 +135,11 @@ export default function MyFeedback() {
       ws.onmessage = null;
       ws.close();
     };
+    // The WS handlers reference `t` from the initial locale; that's
+    // intentional — adding `t` would force a reconnect on every locale
+    // flip, and the only `t` use here is for the rare connection-lost /
+    // error frames, which the user can recover from with a refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function send(text: string) {
@@ -133,7 +147,7 @@ export default function MyFeedback() {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.warn("[recipient WS] send while not OPEN", ws?.readyState);
-      setMessages((m) => [...m, { role: "bot", text: "(not connected — refresh the page)" }]);
+      setMessages((m) => [...m, { role: "bot", text: t("give.not_connected") }]);
       return;
     }
     setMessages((m) => [...m, { role: "you", text }]);
@@ -143,8 +157,7 @@ export default function MyFeedback() {
     setPartial("");
     setPending(true);
     stickToBottom();
-    armThinkingTimer();
-    ws.send(JSON.stringify({ type: "user_text", text }));
+    ws.send(JSON.stringify({ type: "user_text", text, locale }));
     // Re-focus so the user can keep typing while the agent responds.
     inputRef.current?.focus();
   }
@@ -154,9 +167,7 @@ export default function MyFeedback() {
       <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl flex flex-col min-h-0 overflow-hidden">
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
-            <div className="text-slate-400 text-sm">
-              Ask about feedback you have access to. I'll cite the source records.
-            </div>
+            <div className="text-slate-400 text-sm">{t("my.empty_hint")}</div>
           )}
           {messages.map((m, i) => (
             <div
@@ -180,22 +191,25 @@ export default function MyFeedback() {
               className="text-slate-500 text-xs italic"
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
-              thinking…
+              {t("give.thinking")}
             </div>
           )}
         </div>
         <div className="border-t border-slate-200">
           {messages.length === 0 && (
             <div className="px-3 pt-3 flex flex-wrap gap-2">
-              {EXAMPLE_PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => send(p)}
-                  className="px-3 py-1.5 text-xs rounded-full border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
-                >
-                  {p}
-                </button>
-              ))}
+              {EXAMPLE_PROMPT_KEYS.map((key) => {
+                const prompt = t(key);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => send(prompt)}
+                    className="px-3 py-1.5 text-xs rounded-full border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  >
+                    {prompt}
+                  </button>
+                );
+              })}
             </div>
           )}
           <div className="p-3 flex items-center gap-2">
@@ -206,7 +220,7 @@ export default function MyFeedback() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !pending) send(draft);
               }}
-              placeholder="Ask a question…"
+              placeholder={t("my.placeholder")}
               className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm"
             />
             <button
@@ -214,16 +228,14 @@ export default function MyFeedback() {
               disabled={pending}
               className="px-3 py-2 bg-slate-800 text-white rounded text-sm disabled:opacity-50"
             >
-              Send
+              {t("my.send")}
             </button>
             <button
-              onClick={() =>
-                send("Generate a report on the feedback I have access to in the last 90 days.")
-              }
+              onClick={() => send(t("my.generate_report_message"))}
               disabled={pending}
               className="px-3 py-2 border border-slate-300 rounded text-sm text-slate-700 disabled:opacity-50"
             >
-              Generate report
+              {t("my.generate_report")}
             </button>
           </div>
         </div>
@@ -243,14 +255,15 @@ export default function MyFeedback() {
 }
 
 function SourceList({ sources, onSelect }: { sources: Source[]; onSelect: (id: string) => void }) {
+  const { locale, t } = useLocale();
   return (
     <>
       <h3 className="text-xs uppercase font-medium text-slate-500 px-4 pt-4 pb-3 shrink-0">
-        Sources ({sources.length})
+        {t("my.sources_heading")} ({sources.length})
       </h3>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
         {sources.length === 0 && (
-          <div className="text-slate-400 text-sm">Citations appear here after the bot answers.</div>
+          <div className="text-slate-400 text-sm">{t("my.sources_empty")}</div>
         )}
         <ul className="space-y-2 text-sm">
           {sources.map((s) => (
@@ -262,9 +275,11 @@ function SourceList({ sources, onSelect }: { sources: Source[]; onSelect: (id: s
               >
                 <div className="text-slate-800">{s.headline}</div>
                 <div className="text-slate-500 text-xs mt-1">
-                  about {s.subject ?? "—"} ·{" "}
-                  {s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : "—"} ·{" "}
-                  <span className="text-slate-400">{s.id.slice(0, 8)}…</span>
+                  {t("my.source_about")} {s.subject ?? t("my.source_dash")} ·{" "}
+                  {s.submitted_at
+                    ? new Date(s.submitted_at).toLocaleDateString(locale)
+                    : t("my.source_dash")}{" "}
+                  · <span className="text-slate-400">{s.id.slice(0, 8)}…</span>
                 </div>
               </button>
             </li>
@@ -283,17 +298,19 @@ const SENTIMENT_STYLES: Record<string, string> = {
 };
 
 function SourceDetail({ source, onBack }: { source: Source | null; onBack: () => void }) {
+  const { locale, t } = useLocale();
   if (!source) {
     // Source vanished (new query cleared the list). Bounce back.
     return (
       <div className="p-4 text-sm text-slate-500">
         <button onClick={onBack} className="text-slate-600 hover:text-slate-900 text-xs">
-          ← Back
+          {t("my.source_back")}
         </button>
-        <div className="mt-3">This source is no longer in the current results.</div>
+        <div className="mt-3">{t("my.source_gone")}</div>
       </div>
     );
   }
+  const dash = t("my.source_dash");
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4 pb-3 shrink-0 border-b border-slate-200">
@@ -301,28 +318,30 @@ function SourceDetail({ source, onBack }: { source: Source | null; onBack: () =>
           onClick={onBack}
           className="text-slate-600 hover:text-slate-900 text-xs flex items-center gap-1"
         >
-          ← Back
+          {t("my.source_back")}
         </button>
-        <span className="text-xs uppercase font-medium text-slate-500 ml-auto">Source</span>
+        <span className="text-xs uppercase font-medium text-slate-500 ml-auto">
+          {t("my.source_heading")}
+        </span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 text-sm space-y-3">
         <div>
           <div className="text-slate-800 font-medium">{source.headline}</div>
           <div className="text-slate-500 text-xs mt-1">
-            about {source.subject ?? "—"}
+            {t("my.source_about")} {source.subject ?? dash}
             {source.subject_kind ? ` (${source.subject_kind})` : ""}
           </div>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-          <dt className="text-slate-500">From</dt>
+          <dt className="text-slate-500">{t("my.source_from")}</dt>
           <dd className="text-slate-700">
-            {source.is_anonymous ? "anonymous" : (source.provider ?? "—")}
+            {source.is_anonymous ? t("my.source_anonymous") : (source.provider ?? dash)}
           </dd>
-          <dt className="text-slate-500">Submitted</dt>
+          <dt className="text-slate-500">{t("my.source_submitted")}</dt>
           <dd className="text-slate-700">
-            {source.submitted_at ? new Date(source.submitted_at).toLocaleDateString() : "—"}
+            {source.submitted_at ? new Date(source.submitted_at).toLocaleDateString(locale) : dash}
           </dd>
-          <dt className="text-slate-500">ID</dt>
+          <dt className="text-slate-500">{t("my.source_id")}</dt>
           <dd className="text-slate-400 font-mono">{source.id.slice(0, 8)}…</dd>
         </dl>
         {(source.sentiment || source.topic_tags.length > 0) && (
@@ -336,31 +355,35 @@ function SourceDetail({ source, onBack }: { source: Source | null; onBack: () =>
                 {source.sentiment}
               </span>
             )}
-            {source.topic_tags.map((t) => (
-              <span key={t} className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
-                {t}
+            {source.topic_tags.map((tag) => (
+              <span key={tag} className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
+                {tag}
               </span>
             ))}
           </div>
         )}
         <div className="space-y-3">
-          <div className="text-xs uppercase font-medium text-slate-500">Examples</div>
-          {source.sbis.length === 0 && <div className="text-slate-400">none</div>}
+          <div className="text-xs uppercase font-medium text-slate-500">
+            {t("my.source_examples")}
+          </div>
+          {source.sbis.length === 0 && (
+            <div className="text-slate-400">{t("my.source_examples_empty")}</div>
+          )}
           {source.sbis.map((s) => (
             <div key={s.idx} className="border border-slate-200 rounded p-2 space-y-1.5">
               <div className="font-medium text-slate-500 text-xs">#{s.idx + 1}</div>
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                 <dt className="text-slate-500">S</dt>
                 <dd className="text-slate-800 whitespace-pre-wrap break-words">
-                  {s.situation ?? "—"}
+                  {s.situation ?? dash}
                 </dd>
                 <dt className="text-slate-500">B</dt>
                 <dd className="text-slate-800 whitespace-pre-wrap break-words">
-                  {s.behavior ?? "—"}
+                  {s.behavior ?? dash}
                 </dd>
                 <dt className="text-slate-500">I</dt>
                 <dd className="text-slate-800 whitespace-pre-wrap break-words">
-                  {s.impact ?? "—"}
+                  {s.impact ?? dash}
                 </dd>
               </dl>
             </div>

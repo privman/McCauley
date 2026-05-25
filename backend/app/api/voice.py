@@ -49,10 +49,29 @@ _SENTENCE_BOUNDARY_RE = re.compile(r"[.!?][\"')\]]*(?:\s+|$)")
 _MIN_TTS_CHUNK_CHARS = 30
 
 
+# One per supported locale so the STT-failure apology is spoken in the
+# right language — surfacing English mid-Spanish-conversation would feel
+# like a hard error, not a "try again" hint.
+_STT_ERROR_MESSAGES: dict[str, str] = {
+    "en-US": "I'm having trouble hearing you right now — mind trying again in a moment?",
+    "en-GB": "I'm having trouble hearing you right now — mind trying again in a moment?",
+    "es-ES": "Ahora mismo no consigo oírte bien — ¿te importa intentarlo de nuevo en un momento?",
+    "es-419": "Justo ahora no te estoy escuchando bien — ¿podrías intentarlo de nuevo en un momento?",
+    "fr-FR": "J'ai du mal à vous entendre pour l'instant — pouvez-vous réessayer dans un instant ?",
+    "fr-CA": "J'ai de la misère à t'entendre là — est-ce que tu peux réessayer dans un instant ?",
+    "de-DE": "Ich kann dich gerade nicht gut hören — magst du es gleich noch einmal versuchen?",
+}
+
+
+def _stt_error_message(locale: str) -> str:
+    return _STT_ERROR_MESSAGES.get(locale, _STT_ERROR_MESSAGES["en-US"])
+
+
 @router.websocket("/voice")
 async def voice_ws(
     ws: WebSocket,
     conversation_id: str | None = Query(default=None),
+    locale: str = Query(default="en-US"),
     cookie: str | None = Cookie(default=None, alias=COOKIE_NAME),
 ) -> None:
     await ws.accept()
@@ -79,11 +98,16 @@ async def voice_ws(
             convo_id = convo.id
 
     orchestrator = get_or_create(
-        convo_id, user_id=user_id, org_id=org_id, current_user=current_user
+        convo_id,
+        user_id=user_id,
+        org_id=org_id,
+        current_user=current_user,
+        locale=locale,
     )
 
     pcm_buffer = bytearray()
     tts_speed = 1.0  # user-facing multiplier; synthesize() applies the baseline
+    current_locale = locale
     try:
         await ws.send_json({"type": "ready", "conversation_id": str(convo_id)})
         while True:
@@ -103,6 +127,12 @@ async def voice_ws(
             mtype = payload.get("type")
             if mtype == "begin":
                 pcm_buffer.clear()
+                # Let the client refresh the locale on each new turn — the
+                # user may have flipped the selector between utterances.
+                begin_locale = payload.get("locale")
+                if isinstance(begin_locale, str):
+                    current_locale = begin_locale
+                    orchestrator.locale = begin_locale
                 continue
             if mtype == "set_speed":
                 try:
@@ -110,23 +140,29 @@ async def voice_ws(
                 except (TypeError, ValueError):
                     pass  # ignore bad input; keep the previous value
                 continue
+            if mtype == "set_locale":
+                set_locale = payload.get("locale")
+                if isinstance(set_locale, str):
+                    current_locale = set_locale
+                    orchestrator.locale = set_locale
+                continue
             if mtype != "end":
                 continue
 
             audio = bytes(pcm_buffer)
             pcm_buffer.clear()
-            transcript_result = await transcribe(audio)
+            transcript_result = await transcribe(audio, locale=current_locale)
 
             if isinstance(transcript_result, TranscriptError):
                 # STT itself failed — speak a user-facing apology so the
                 # user knows to try again. The orchestrator never runs.
-                error_msg = (
-                    "I'm having trouble hearing you right now — " "mind trying again in a moment?"
-                )
+                error_msg = _stt_error_message(current_locale)
                 await ws.send_json({"type": "transcript", "text": "", "error": "stt_failed"})
                 await ws.send_json({"type": "assistant_text", "text": error_msg})
                 try:
-                    async for chunk in synthesize(error_msg, speed=tts_speed):
+                    async for chunk in synthesize(
+                        error_msg, speed=tts_speed, locale=current_locale
+                    ):
                         await ws.send_bytes(chunk)
                 except Exception:
                     logger.exception("TTS failed during STT-error apology")
@@ -167,7 +203,11 @@ async def voice_ws(
             # can't see the per-iteration scope so it flags the pattern.
             async def _synth_chunk(chunk_text: str) -> list[bytes]:
                 out: list[bytes] = []
-                async for audio in synthesize(chunk_text, speed=tts_speed):  # noqa: B023
+                async for audio in synthesize(
+                    chunk_text,
+                    speed=tts_speed,  # noqa: B023
+                    locale=current_locale,  # noqa: B023
+                ):
                     out.append(audio)
                 return out
 

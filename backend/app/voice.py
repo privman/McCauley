@@ -77,11 +77,14 @@ def _gcp_project_id() -> str:
     )
 
 
-async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
+async def transcribe(audio_bytes: bytes, *, locale: str = "en-US") -> TranscriptionResult:
     """Run a one-shot Google STT v2 recognition over a complete utterance.
 
     Push-to-talk only needs the final transcript, so we wait until the
     user releases the mic and send the whole utterance — no streaming.
+
+    `locale` is a frontend locale code (see app.locales); we resolve it
+    to the matching BCP-47 STT code before sending.
 
     Returns a TranscriptionResult union so the caller can distinguish:
       - TranscriptText:    we got text back
@@ -95,8 +98,11 @@ async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
     from google.api_core.client_options import ClientOptions
     from google.cloud.speech_v2 import SpeechClient, types
 
+    from app.locales import resolve as resolve_locale
+
     project = _gcp_project_id()
     recognizer = f"projects/{project}/locations/{STT_LOCATION}/recognizers/_"
+    stt_code = resolve_locale(locale).stt_code
 
     def _sync_recognize() -> str:
         # Regional recognizers require a regional endpoint; the default
@@ -110,7 +116,7 @@ async def transcribe(audio_bytes: bytes) -> TranscriptionResult:
                 sample_rate_hertz=SAMPLE_RATE,
                 audio_channel_count=1,
             ),
-            language_codes=["en-US"],
+            language_codes=[stt_code],
             model=STT_MODEL,
             features=types.RecognitionFeatures(
                 enable_automatic_punctuation=True,
@@ -173,8 +179,10 @@ TTS_RATE_MIN = 0.25
 TTS_RATE_MAX = 4.0
 
 
-async def synthesize(text: str, *, speed: float = 1.0) -> AsyncIterator[bytes]:
-    """Synthesize `text` via Google TTS Neural2 and yield the audio bytes.
+async def synthesize(
+    text: str, *, speed: float = 1.0, locale: str = "en-US"
+) -> AsyncIterator[bytes]:
+    """Synthesize `text` via Google TTS and yield the audio bytes.
 
     Strips markdown formatting first — TTS would otherwise pronounce `**`
     as "asterisk asterisk" etc., since chat output is markdown-rendered
@@ -182,6 +190,10 @@ async def synthesize(text: str, *, speed: float = 1.0) -> AsyncIterator[bytes]:
 
     `speed` is the user-facing multiplier (1.0 = default brisk pace).
     Multiplied by TTS_RATE_BASELINE before being sent to Google.
+
+    `locale` selects the language. We omit `name` so Google picks the
+    default voice for the locale — keeping a per-locale voice map would
+    just be one more thing to maintain when Google renames a voice.
     """
     text = _strip_markdown_for_tts(text)
     if not text.strip():
@@ -189,12 +201,15 @@ async def synthesize(text: str, *, speed: float = 1.0) -> AsyncIterator[bytes]:
     speaking_rate = max(TTS_RATE_MIN, min(TTS_RATE_MAX, speed * TTS_RATE_BASELINE))
     from google.cloud import texttospeech
 
+    from app.locales import resolve as resolve_locale
+
+    tts_code = resolve_locale(locale).tts_code
+
     def _sync_synth() -> bytes:
         client = texttospeech.TextToSpeechClient()
         synthesis_input = texttospeech.SynthesisInput(text=text)
         voice = texttospeech.VoiceSelectionParams(
-            language_code="en-US",
-            name="en-US-Neural2-F",
+            language_code=tts_code,
         )
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.LINEAR16,

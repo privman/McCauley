@@ -35,6 +35,7 @@ router = APIRouter(prefix="/ws", tags=["recipient"])
 async def recipient_ws(
     ws: WebSocket,
     conversation_id: str | None = Query(default=None),
+    locale: str = Query(default="en-US"),
     cookie: str | None = Cookie(default=None, alias=COOKIE_NAME),
 ) -> None:
     await ws.accept()
@@ -61,7 +62,11 @@ async def recipient_ws(
             convo_id = convo.id
 
     orchestrator = get_or_create(
-        convo_id, user_id=user_id, org_id=org_id, current_user=current_user
+        convo_id,
+        user_id=user_id,
+        org_id=org_id,
+        current_user=current_user,
+        locale=locale,
     )
 
     try:
@@ -76,6 +81,9 @@ async def recipient_ws(
             if msg.get("type") != "user_text":
                 await ws.send_json({"type": "error", "message": "unknown type"})
                 continue
+            msg_locale = msg.get("locale")
+            if isinstance(msg_locale, str):
+                orchestrator.locale = msg_locale
             user_text = msg.get("text", "")
             logger.info(
                 "recipient convo=%s user=%s user_message chars=%d",

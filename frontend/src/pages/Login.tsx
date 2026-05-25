@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { api, User } from "../api";
+import { LocaleSelector } from "../components/LocaleSelector";
+import { useLocale } from "../i18n/LocaleContext";
 
 export default function Login({ onLogin }: { onLogin: (u: User) => void }) {
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useLocale();
 
   useEffect(() => {
     api
@@ -13,13 +16,16 @@ export default function Login({ onLogin }: { onLogin: (u: User) => void }) {
   }, []);
 
   if (error) return <div className="p-8 text-rose-600">{error}</div>;
-  if (!users) return <div className="p-8 text-slate-500">loading users…</div>;
+  if (!users) return <div className="p-8 text-slate-500">{t("login.loading_users")}</div>;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="bg-white shadow rounded-xl p-8 w-full max-w-md">
-        <h1 className="text-xl font-semibold text-slate-800 mb-2">McCauley</h1>
-        <p className="text-slate-500 mb-6 text-sm">Demo build. Pick a seeded user to sign in as.</p>
+        <div className="flex items-start justify-between mb-2">
+          <h1 className="text-xl font-semibold text-slate-800">McCauley</h1>
+          <LocaleSelector />
+        </div>
+        <p className="text-slate-500 mb-6 text-sm">{t("login.subtitle")}</p>
         <ul className="divide-y divide-slate-100">
           {users.map((u) => (
             <li key={u.id}>

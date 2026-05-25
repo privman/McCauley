@@ -83,6 +83,9 @@ Rules:
   get_current_datetime FIRST and compute absolute ISO dates from the
   returned `datetime_utc`. Do NOT rely on your training cutoff to
   determine "now" — it will be wrong.
+- Respond in {language_label}. If the user writes in another language,
+  mirror their language for that turn. Verbatim quotes from feedback
+  records must remain in their original language.
 """
 
 
@@ -291,10 +294,17 @@ class RecipientConversation:
     user_id: uuid.UUID
     org_id: uuid.UUID
     current_user: UserProfile
+    locale: str = "en-US"
     history: list[MessageParam] = field(default_factory=list)
 
     def system_prompt(self) -> str:
-        return SYSTEM_PROMPT.format(current_user_block=self.current_user.prompt_block())
+        from app.locales import resolve as resolve_locale
+
+        loc = resolve_locale(self.locale)
+        return SYSTEM_PROMPT.format(
+            current_user_block=self.current_user.prompt_block(),
+            language_label=loc.variant_label,
+        )
 
     async def _do_search(
         self, session: AsyncSession, args: dict[str, Any]
@@ -493,6 +503,7 @@ def get_or_create(
     user_id: uuid.UUID,
     org_id: uuid.UUID,
     current_user: UserProfile,
+    locale: str = "en-US",
 ) -> RecipientConversation:
     convo = _active.get(conversation_id)
     if convo is None:
@@ -501,8 +512,11 @@ def get_or_create(
             user_id=user_id,
             org_id=org_id,
             current_user=current_user,
+            locale=locale,
         )
         _active[conversation_id] = convo
+    else:
+        convo.locale = locale
     return convo
 
 
