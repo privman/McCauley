@@ -81,6 +81,8 @@ export const STRING_KEYS = [
   "draft.toggle_title_default",
   // Locale selector
   "locale.aria_label",
+  // System / technical messages (italic-dim, not chat bubbles)
+  "system.connection_retrying",
 ] as const;
 
 export type StringKey = (typeof STRING_KEYS)[number];
@@ -159,6 +161,7 @@ const EN_US: StringTable = {
   "draft.toggle_title_busy": "Wait for the agent to finish",
   "draft.toggle_title_default": "Toggle anonymity",
   "locale.aria_label": "Language",
+  "system.connection_retrying": "connection failed, retrying…",
 };
 
 const EN_GB: Partial<StringTable> = {
@@ -235,6 +238,7 @@ const ES_ES: Partial<StringTable> = {
   "draft.toggle_title_busy": "Espera a que termine el agente",
   "draft.toggle_title_default": "Alternar anonimato",
   "locale.aria_label": "Idioma",
+  "system.connection_retrying": "fallo de conexión, reintentando…",
 };
 
 const ES_419: Partial<StringTable> = {
@@ -322,6 +326,7 @@ const FR_FR: Partial<StringTable> = {
   "draft.toggle_title_busy": "Attendez que l'agent termine",
   "draft.toggle_title_default": "Basculer l'anonymat",
   "locale.aria_label": "Langue",
+  "system.connection_retrying": "connexion perdue, nouvelle tentative…",
 };
 
 const FR_CA: Partial<StringTable> = {
@@ -406,6 +411,7 @@ const DE_DE: Partial<StringTable> = {
   "draft.toggle_title_busy": "Warte, bis der Agent fertig ist",
   "draft.toggle_title_default": "Anonymität umschalten",
   "locale.aria_label": "Sprache",
+  "system.connection_retrying": "Verbindung fehlgeschlagen, neuer Versuch…",
 };
 
 const TABLES: Record<LocaleCode, StringTable> = {

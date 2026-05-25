@@ -5,7 +5,9 @@ import { useAutoScroll } from "../components/useAutoScroll";
 import { useLocale } from "../i18n/LocaleContext";
 import type { StringKey } from "../i18n/strings";
 
-type Msg = { role: "you" | "bot"; text: string };
+// `system` is for technical notifications (errors, connection, etc.) —
+// rendered in the same italic-dim style as the "thinking…" indicator.
+type Msg = { role: "you" | "bot" | "system"; text: string };
 type SBI = {
   idx: number;
   situation: string | null;
@@ -40,6 +42,9 @@ export default function MyFeedback() {
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting">(
+    "connected",
+  );
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -90,20 +95,20 @@ export default function MyFeedback() {
         conversation_id: convoIdRef.current ?? undefined,
       }),
     );
-    ws.onopen = () => console.info("[recipient WS] open");
+    ws.onopen = () => {
+      console.info("[recipient WS] open");
+      setConnectionStatus("connected");
+    };
     ws.onerror = (e) => console.error("[recipient WS] error", e);
     ws.onclose = (e) => {
       console.info("[recipient WS] close", e.code, e.reason);
       wsRef.current = null;
-      // If a request was in-flight, surface the loss rather than spin forever.
-      setPending((wasPending) => {
-        if (wasPending) {
-          clearThinkingTimer();
-          setPartial("");
-          setMessages((m) => [...m, { role: "bot", text: t("give.connection_lost") }]);
-        }
-        return false;
-      });
+      // Status indicator below the chat surfaces the disconnect — no
+      // chat bubble needed. Pending turns are abandoned.
+      setConnectionStatus("reconnecting");
+      setPending(false);
+      clearThinkingTimer();
+      setPartial("");
     };
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
@@ -131,7 +136,7 @@ export default function MyFeedback() {
           setPending(false);
           setMessages((m) => [
             ...m,
-            { role: "bot", text: `${t("give.error_prefix")} ${msg.message}` },
+            { role: "system", text: `${t("give.error_prefix")} ${msg.message}` },
           ]);
           break;
       }
@@ -160,8 +165,9 @@ export default function MyFeedback() {
     if (!text.trim() || pending) return;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
+      // Status indicator already shows the disconnect — silently drop
+      // the send so the input keeps the user's text for retry.
       console.warn("[recipient WS] send while not OPEN", ws?.readyState);
-      setMessages((m) => [...m, { role: "bot", text: t("give.not_connected") }]);
       return;
     }
     setMessages((m) => [...m, { role: "you", text }]);
@@ -183,18 +189,31 @@ export default function MyFeedback() {
           {messages.length === 0 && (
             <div className="text-slate-400 text-sm">{t("my.empty_hint")}</div>
           )}
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`max-w-[85%] rounded-xl px-3 py-2 ${
-                m.role === "you"
-                  ? "ml-auto bg-emerald-100 text-emerald-900 text-sm whitespace-pre-wrap"
-                  : "bg-slate-100 text-slate-800"
-              }`}
-            >
-              {m.role === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
-            </div>
-          ))}
+          {messages.map((m, i) => {
+            if (m.role === "system") {
+              return (
+                <div
+                  key={i}
+                  className="text-slate-500 text-xs italic"
+                  style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+                >
+                  {m.text}
+                </div>
+              );
+            }
+            return (
+              <div
+                key={i}
+                className={`max-w-[85%] rounded-xl px-3 py-2 ${
+                  m.role === "you"
+                    ? "ml-auto bg-emerald-100 text-emerald-900 text-sm whitespace-pre-wrap"
+                    : "bg-slate-100 text-slate-800"
+                }`}
+              >
+                {m.role === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
+              </div>
+            );
+          })}
           {partial && (
             <div className="max-w-[85%] rounded-xl px-3 py-2 bg-slate-100 text-slate-800">
               <Markdown>{partial}</Markdown>
@@ -206,6 +225,14 @@ export default function MyFeedback() {
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
               {t("give.thinking")}
+            </div>
+          )}
+          {connectionStatus === "reconnecting" && (
+            <div
+              className="text-slate-500 text-xs italic"
+              style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+            >
+              {t("system.connection_retrying")}
             </div>
           )}
         </div>

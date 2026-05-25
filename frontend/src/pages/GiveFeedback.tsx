@@ -8,7 +8,11 @@ import { VoiceSession } from "../voice";
 
 // `isGreeting` flags the auto-greeting so we can replace it when the
 // locale changes — but only as long as it's still the only message.
-type Msg = { role: "you" | "bot"; text: string; isGreeting?: boolean };
+// `system` is for technical notifications (errors, submitted, etc.) —
+// rendered in the same italic-dim style as the "thinking…" indicator
+// rather than as a chat bubble, since they describe app/server events
+// rather than something a participant said.
+type Msg = { role: "you" | "bot" | "system"; text: string; isGreeting?: boolean };
 
 const THINKING_DELAY_MS = 750;
 
@@ -22,6 +26,11 @@ export default function GiveFeedback() {
   const [partial, setPartial] = useState("");
   const [pending, setPending] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
+  // "reconnecting" covers both intentional debug-panel disconnect and a
+  // real WS close; the indicator clears when the next WS open succeeds.
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting">(
+    "connected",
+  );
   const [stack, setStack] = useState<Stack | null>(null);
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
@@ -70,31 +79,33 @@ export default function GiveFeedback() {
     // Text WS for typed turns. The locale query param is consumed by
     // the backend to render the localized greeting frame; per-message
     // locale on user_text frames keeps later turns in sync. Passing
-    // `conversation_id` on reconnect (debug-panel network toggle, etc.)
-    // makes the backend resume the same convo row — so we don't get a
-    // duplicate greeting on top of the existing chat. convoIdRef is
-    // populated from the first `ready` frame and only cleared on a
-    // locale change (the stale-greeting refresh effect below).
+    // `conversation_id` on reconnect makes the backend resume the same
+    // convo row — so we don't get a duplicate greeting on top of the
+    // existing chat. convoIdRef is populated from the first `ready`
+    // frame and only cleared on a locale change (the stale-greeting
+    // refresh effect below).
     const ws = new WebSocket(
       wsUrl("/ws/provider", {
         locale: localeRef.current,
         conversation_id: convoIdRef.current ?? undefined,
       }),
     );
-    ws.onopen = () => console.info("[provider WS] open");
+    ws.onopen = () => {
+      console.info("[provider WS] open");
+      setConnectionStatus("connected");
+    };
     ws.onerror = (e) => console.error("[provider WS] error", e);
     ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
     ws.onclose = (e) => {
       console.info("[provider WS] close", e.code, e.reason);
       textWsRef.current = null;
-      setPending((wasPending) => {
-        if (wasPending) {
-          clearThinkingTimer();
-          setPartial("");
-          setMessages((m) => [...m, { role: "bot", text: t("give.connection_lost") }]);
-        }
-        return false;
-      });
+      // Surface the dropped socket — the user-facing message is the
+      // status indicator below the chat, not a chat bubble. Pending
+      // turns are abandoned (no response is coming).
+      setConnectionStatus("reconnecting");
+      setPending(false);
+      clearThinkingTimer();
+      setPartial("");
     };
     textWsRef.current = ws;
     return () => {
@@ -139,7 +150,7 @@ export default function GiveFeedback() {
       case "submitted":
         setMessages((m) => [
           ...m,
-          { role: "bot", text: `${t("give.submitted")} ${msg.feedback_id}` },
+          { role: "system", text: `${t("give.submitted")} ${msg.feedback_id}` },
         ]);
         break;
       case "error":
@@ -148,7 +159,7 @@ export default function GiveFeedback() {
         setPending(false);
         setMessages((m) => [
           ...m,
-          { role: "bot", text: `${t("give.error_prefix")} ${msg.message}` },
+          { role: "system", text: `${t("give.error_prefix")} ${msg.message}` },
         ]);
         break;
     }
@@ -189,8 +200,10 @@ export default function GiveFeedback() {
     if (!text.trim() || pending) return;
     const ws = textWsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
+      // The connection-failed indicator is already visible — no need
+      // to spam the chat with a duplicate notice. Silently drop the
+      // send so the input keeps the user's text for retry.
       console.warn("[provider WS] send while not OPEN", ws?.readyState);
-      setMessages((m) => [...m, { role: "bot", text: t("give.not_connected") }]);
       return;
     }
     // Any new user message — typed, button-synthesized, or otherwise —
@@ -232,11 +245,11 @@ export default function GiveFeedback() {
         },
         onDraftState: (s) => setStack(s as Stack),
         onSubmitted: (id) =>
-          setMessages((m) => [...m, { role: "bot", text: `${t("give.submitted")} ${id}` }]),
+          setMessages((m) => [...m, { role: "system", text: `${t("give.submitted")} ${id}` }]),
         onError: (msg) => {
           clearThinkingTimer();
           setPartial("");
-          setMessages((m) => [...m, { role: "bot", text: `${t("give.error_prefix")} ${msg}` }]);
+          setMessages((m) => [...m, { role: "system", text: `${t("give.error_prefix")} ${msg}` }]);
         },
       },
       locale,
@@ -319,18 +332,31 @@ export default function GiveFeedback() {
           {messages.length === 0 && (
             <div className="text-slate-400 text-sm">{t("give.empty_hint")}</div>
           )}
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`max-w-[80%] rounded-xl px-3 py-2 ${
-                m.role === "you"
-                  ? "ml-auto bg-emerald-100 text-emerald-900 text-sm whitespace-pre-wrap"
-                  : "bg-slate-100 text-slate-800"
-              }`}
-            >
-              {m.role === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
-            </div>
-          ))}
+          {messages.map((m, i) => {
+            if (m.role === "system") {
+              return (
+                <div
+                  key={i}
+                  className="text-slate-500 text-xs italic"
+                  style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+                >
+                  {m.text}
+                </div>
+              );
+            }
+            return (
+              <div
+                key={i}
+                className={`max-w-[80%] rounded-xl px-3 py-2 ${
+                  m.role === "you"
+                    ? "ml-auto bg-emerald-100 text-emerald-900 text-sm whitespace-pre-wrap"
+                    : "bg-slate-100 text-slate-800"
+                }`}
+              >
+                {m.role === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
+              </div>
+            );
+          })}
           {partial && (
             <div className="max-w-[80%] rounded-xl px-3 py-2 bg-slate-100 text-slate-800">
               <Markdown>{partial}</Markdown>
@@ -342,6 +368,14 @@ export default function GiveFeedback() {
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
               {t("give.thinking")}
+            </div>
+          )}
+          {connectionStatus === "reconnecting" && (
+            <div
+              className="text-slate-500 text-xs italic"
+              style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+            >
+              {t("system.connection_retrying")}
             </div>
           )}
         </div>
