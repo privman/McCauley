@@ -1,4 +1,4 @@
-import { Fragment, ReactNode } from "react";
+import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
 
 type Subject = { kind: string; id: string | null; name: string | null };
 type SBI = {
@@ -203,21 +203,48 @@ function AnonymousToggle({
   disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
+  // Optimistic state so the toggle flips immediately on click instead of
+  // waiting for the agent to round-trip a draft_state update.
+  const [optimistic, setOptimistic] = useState(value);
+  // Sync to authoritative value when it changes (normally: agent confirmed).
+  useEffect(() => {
+    setOptimistic(value);
+  }, [value]);
+  // Also sync when the turn ends — `disabled` transitioning true → false —
+  // so if the agent didn't actually toggle anything, the visual snaps back
+  // to the authoritative value instead of staying optimistic.
+  // Tracking the transition (not just the current value) avoids re-syncing
+  // the moment the click sends a message and `disabled` flips to true,
+  // which would clobber the optimistic flip we just made.
+  const prevDisabledRef = useRef(disabled);
+  useEffect(() => {
+    if (prevDisabledRef.current && !disabled) {
+      setOptimistic(value);
+    }
+    prevDisabledRef.current = disabled;
+  }, [disabled, value]);
+
+  function handleClick() {
+    const next = !optimistic;
+    setOptimistic(next);
+    onChange(next);
+  }
+
   return (
     <button
       type="button"
       role="switch"
-      aria-checked={value}
+      aria-checked={optimistic}
       disabled={disabled}
-      onClick={() => onChange(!value)}
+      onClick={handleClick}
       title={disabled ? "Wait for the agent to finish" : "Toggle anonymity"}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-        value ? "bg-emerald-500" : "bg-slate-300"
+        optimistic ? "bg-emerald-500" : "bg-slate-300"
       }`}
     >
       <span
         className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-          value ? "translate-x-[18px]" : "translate-x-0.5"
+          optimistic ? "translate-x-[18px]" : "translate-x-0.5"
         }`}
       />
     </button>
