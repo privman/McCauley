@@ -137,6 +137,6 @@ Wired up by `./bin/setup`. Skip a particular push with
 
 ## What's *not* here
 
-See `[v0.1-scope.md](v0.1-scope.md)` **What's out** for the explicit deferral list — most of
+See [`v0.1-scope.md`](v0.1-scope.md) **What's out** for the explicit deferral list — most of
 v1's enterprise plumbing (OIDC, SCIM, multi-region, observability stack, taxonomy lifecycle,
 provider-injection screening) is intentionally absent.
