@@ -25,11 +25,6 @@ final class SystemAudioCapture {
     }
 
     func start() throws {
-        // The process-tap API family needs macOS 14.2+; the app targets 14.4
-        // but the package's platform floor is 14.0, hence the runtime guard.
-        guard #available(macOS 14.2, *) else {
-            throw NativeError.callFailed("System audio capture requires macOS 14.4 or newer.")
-        }
         // Tap every process's output (empty exclude list), stereo mixdown.
         let desc = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         desc.uuid = UUID()
@@ -127,9 +122,7 @@ final class SystemAudioCapture {
             aggregateID = kAudioObjectUnknown
         }
         if tapID != kAudioObjectUnknown {
-            if #available(macOS 14.2, *) {
-                AudioHardwareDestroyProcessTap(tapID)
-            }
+            AudioHardwareDestroyProcessTap(tapID)
             tapID = kAudioObjectUnknown
         }
         converter = nil

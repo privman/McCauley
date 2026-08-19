@@ -8,7 +8,10 @@ import PackageDescription
 let package = Package(
     name: "Talmaci",
     platforms: [
-        .macOS(.v14)
+        // The app needs the CoreAudio process-tap APIs (macOS 14.2+) and
+        // targets 14.4 as documented; declaring it here keeps availability
+        // checking honest and the symbols strongly linked.
+        .macOS("14.4")
     ],
     targets: [
         .target(name: "TalmaciCore"),
