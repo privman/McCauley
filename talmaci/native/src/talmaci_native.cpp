@@ -157,6 +157,15 @@ char *tn_stt_transcribe(tn_stt *h, const float *samples, int32_t n_samples,
   if (n_threads > 0) {
     params.n_threads = n_threads;
   }
+  // Whisper pads input to 30 s, so the encoder cost is normally constant and
+  // large. Limiting the audio context to the real window length (50 tokens
+  // per second, plus headroom) cuts encoder time by ~3-4x for the short
+  // windows the streaming app uses — the standard whisper.cpp streaming
+  // optimization.
+  {
+    const int ctx = static_cast<int>(n_samples / 16000.0 * 50.0) + 64;
+    params.audio_ctx = std::min(1500, std::max(128, ctx));
+  }
 
   if (whisper_full(h->ctx, params, samples, n_samples) != 0) {
     set_err(err, err_len, "whisper_full failed");
