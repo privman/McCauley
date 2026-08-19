@@ -1,0 +1,100 @@
+name: talmaci
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+    paths:
+      - "talmaci/**"
+      - ".github/workflows/talmaci.yml"
+  pull_request:
+    paths:
+      - "talmaci/**"
+      - ".github/workflows/talmaci.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: talmaci
+
+jobs:
+  # Pure-logic Swift tests on Linux (TalmaciCore is platform-neutral).
+  swift-core-linux:
+    runs-on: ubuntu-latest
+    container: swift:5.10-jammy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift tests (TalmaciCore)
+        run: swift test
+
+  # Native library + CLI on Linux: wiring test (no downloads beyond deps) and
+  # real-model end-to-end quality test.
+  native-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y cmake espeak-ng python3-venv
+      - name: Cache native build
+        uses: actions/cache@v4
+        with:
+          path: talmaci/native/build
+          key: native-linux-${{ hashFiles('talmaci/native/CMakeLists.txt') }}-${{ hashFiles('talmaci/native/src/**', 'talmaci/native/include/**', 'talmaci/native/cli/**') }}
+          restore-keys: |
+            native-linux-${{ hashFiles('talmaci/native/CMakeLists.txt') }}-
+      - name: Build native
+        run: ./scripts/build-native.sh
+      - name: Python deps for tests
+        run: pip install "ctranslate2>=4.0,<5" sentencepiece numpy pyyaml
+      - name: Wiring test (synthetic models)
+        run: ./native/test/wiring_test.sh
+      - name: Cache real models
+        uses: actions/cache@v4
+        with:
+          path: talmaci/ci-models
+          key: models-${{ hashFiles('talmaci/scripts/fetch-models.sh') }}
+      - name: Fetch real models
+        run: TALMACI_MODELS_DIR="$PWD/ci-models" ./scripts/fetch-models.sh
+      - name: End-to-end test (real models)
+        run: TALMACI_MODELS_DIR="$PWD/ci-models" ./native/test/e2e_test.sh
+
+  # The real target: Apple Silicon macOS. Builds everything including the app
+  # bundle, runs all tests, uploads the .app as an artifact.
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift build + tests
+        run: |
+          swift build
+          swift test
+      - name: Install deps
+        run: brew install espeak-ng || true
+      - name: Cache native build
+        uses: actions/cache@v4
+        with:
+          path: talmaci/native/build
+          key: native-macos-${{ hashFiles('talmaci/native/CMakeLists.txt') }}-${{ hashFiles('talmaci/native/src/**', 'talmaci/native/include/**', 'talmaci/native/cli/**') }}
+          restore-keys: |
+            native-macos-${{ hashFiles('talmaci/native/CMakeLists.txt') }}-
+      - name: Build native
+        run: ./scripts/build-native.sh
+      - name: Wiring test (synthetic models)
+        run: |
+          pip3 install --break-system-packages "ctranslate2>=4.0,<5" sentencepiece numpy pyyaml
+          ./native/test/wiring_test.sh
+      - name: Cache real models
+        uses: actions/cache@v4
+        with:
+          path: talmaci/ci-models
+          key: models-${{ hashFiles('talmaci/scripts/fetch-models.sh') }}
+      - name: Fetch real models (exercises the user-facing script)
+        run: TALMACI_MODELS_DIR="$PWD/ci-models" ./scripts/fetch-models.sh
+      - name: End-to-end test (real models)
+        run: TALMACI_MODELS_DIR="$PWD/ci-models" ./native/test/e2e_test.sh
+      - name: Assemble app bundle
+        run: ./scripts/build-app.sh
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Talmaci.app
+          path: talmaci/build/Talmaci.app

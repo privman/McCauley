@@ -36,3 +36,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Talmaci (mac app)
+talmaci/.build/
+talmaci/build/
+talmaci/native/build/
+talmaci/models/
+talmaci/ci-models/
