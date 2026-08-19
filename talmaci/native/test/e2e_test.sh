@@ -22,8 +22,8 @@ rm -rf "$WORK" && mkdir -p "$WORK"
 JFK=build/_deps/whisper-src/samples/jfk.wav
 [[ -f "$JFK" ]] || { echo "missing $JFK"; exit 1; }
 
-norm() { # lowercase, strip diacritics we care about, collapse spaces
-  tr '[:upper:]' '[:lower:]' | sed -e 's/ă/a/g; s/â/a/g; s/î/i/g; s/ș/s/g; s/ş/s/g; s/ț/t/g; s/ţ/t/g'
+norm() { # lowercase + strip diacritics, portably (BSD sed mangles multibyte)
+  python3 -c "import sys,unicodedata as u; t=u.normalize('NFD', sys.stdin.read().lower()); sys.stdout.write(''.join(c for c in t if not u.combining(c)))"
 }
 
 fail=0

@@ -12,6 +12,10 @@ on:
       - ".github/workflows/talmaci.yml"
   workflow_dispatch:
 
+concurrency:
+  group: talmaci-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: talmaci
@@ -44,9 +48,11 @@ jobs:
       - name: Build native
         run: ./scripts/build-native.sh
       - name: Python deps for tests
-        run: pip install "ctranslate2>=4.0,<5" sentencepiece numpy pyyaml
+        run: |
+          python3 -m venv .venv-ci
+          ./.venv-ci/bin/pip install -q "ctranslate2>=4.0,<5" sentencepiece numpy pyyaml
       - name: Wiring test (synthetic models)
-        run: ./native/test/wiring_test.sh
+        run: PATH="$PWD/.venv-ci/bin:$PATH" ./native/test/wiring_test.sh
       - name: Cache real models
         uses: actions/cache@v4
         with:
@@ -80,8 +86,9 @@ jobs:
         run: ./scripts/build-native.sh
       - name: Wiring test (synthetic models)
         run: |
-          pip3 install --break-system-packages "ctranslate2>=4.0,<5" sentencepiece numpy pyyaml
-          ./native/test/wiring_test.sh
+          python3 -m venv .venv-ci
+          ./.venv-ci/bin/pip install -q "ctranslate2>=4.0,<5" sentencepiece numpy pyyaml
+          PATH="$PWD/.venv-ci/bin:$PATH" ./native/test/wiring_test.sh
       - name: Cache real models
         uses: actions/cache@v4
         with:

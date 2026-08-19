@@ -91,10 +91,27 @@ convert_mt() { # pair zip_url out_name prefix_token
 }
 
 if [[ $SKIP_MT -eq 0 ]]; then
+  # The ctranslate2 wheel needs Python >= 3.10 (Apple's CLT python3 is 3.9);
+  # find the newest suitable interpreter.
+  PYBIN=""
+  for cand in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      if "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+        PYBIN="$cand"
+        break
+      fi
+    fi
+  done
+  if [[ -z "$PYBIN" ]]; then
+    echo "error: need Python >= 3.10 for the one-time model conversion." >&2
+    echo "       brew install python   (then re-run this script)" >&2
+    exit 1
+  fi
+
   VENV="$MODELS_DIR/.convert-venv"
   if [[ ! -x "$VENV/bin/python" ]]; then
-    echo "  creating conversion venv (one-time) ..."
-    python3 -m venv "$VENV"
+    echo "  creating conversion venv (one-time, using $PYBIN) ..."
+    "$PYBIN" -m venv "$VENV"
     "$VENV/bin/pip" -q install --upgrade pip
     "$VENV/bin/pip" -q install "ctranslate2>=4.0,<5" pyyaml sentencepiece numpy
   fi

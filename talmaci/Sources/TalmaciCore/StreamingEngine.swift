@@ -190,11 +190,18 @@ public final class StreamingEngine {
             translation.tentative = ""
             lastOpenTranslated = ""
         } else if open != lastOpenTranslated {
-            let t0 = DispatchTime.now()
-            if let out = try? mt.translate(open) {
-                stats.recordMt(Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1e6)
-                translation.tentative = out
+            // Whisper often re-recognizes an already-translated sentence while
+            // the window is still open — reuse the sentence cache when it does.
+            if let hit = translationCache[open] {
+                translation.tentative = hit
                 lastOpenTranslated = open
+            } else {
+                let t0 = DispatchTime.now()
+                if let out = try? mt.translate(open) {
+                    stats.recordMt(Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1e6)
+                    translation.tentative = out
+                    lastOpenTranslated = open
+                }
             }
         }
     }
